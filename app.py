@@ -760,11 +760,15 @@ def _continuum_digest(state, message: str) -> str:
     return "CONTINUUM DIGEST — the facilities informing you this turn:\n\n" + "\n\n".join(parts)
 
 
-def run_model(model_id: str, messages: list[dict]) -> str:
+def _oauth_token_value(oauth_token: Any | None) -> str:
+    return str(getattr(oauth_token, "token", "") or "")
+
+
+def run_model(model_id: str, messages: list[dict], hf_token: str | None = None) -> str:
     if CLI_BRAIN:
         return _cli_brain_relay(messages)
     if parse_provider_model_id(model_id):
-        return run_hf_provider_chat(model_id, _prep_messages(messages))
+        return run_hf_provider_chat(model_id, _prep_messages(messages), token_override=hf_token)
     tok = _get_tokenizer(model_id)
     prompt = tok.apply_chat_template(_prep_messages(messages), add_generation_prompt=True, tokenize=False)
     return _gpu_generate(model_id, prompt)
@@ -1202,7 +1206,7 @@ def save_peer_links(
         except Exception:
             pass
         error_text = "Could not save links: " + " ".join(errors)
-        return error_text, state, runtime_settings_state(), error_text, []
+        return error_text, state, runtime_settings_markdown(), error_text, []
 
     payload = {
         "schema": "champion-continuum/peer-links/v1",
@@ -1222,7 +1226,7 @@ def save_peer_links(
         pass
     tool_status, rows, state = _index_service_links(state, links)
     status = _peer_link_status_text() + "\n\n" + tool_status
-    return status, state, runtime_settings_state(), tool_status, rows
+    return status, state, runtime_settings_markdown(), tool_status, rows
 
 
 def _cache_ids(text: str) -> list[str]:
@@ -1420,8 +1424,16 @@ def inspect_node(state, evt: gr.SelectData):
         return {"error": str(exc)}
 
 
-def chat(message: str, history: list, model_id: str, mcp_url: str, state):
+def chat(
+    message: str,
+    history: list,
+    model_id: str,
+    mcp_url: str,
+    state,
+    oauth_token: gr.OAuthToken | None = None,
+):
     state = state or _new_session()
+    hf_oauth_token = _oauth_token_value(oauth_token)
     history_messages = _history_messages(history)
     message = (message or "").strip()
     if not message:
@@ -1507,7 +1519,7 @@ def chat(message: str, history: list, model_id: str, mcp_url: str, state):
                 },
             )
             t0 = time.time()
-            reply = run_model(active_model, plain_msgs)
+            reply = run_model(active_model, plain_msgs, hf_token=hf_oauth_token)
             latency_ms = int((time.time() - t0) * 1000)
             rendered = _agent_prose(reply) or (reply or "").strip()
             state["trace"].observe(
@@ -1530,7 +1542,7 @@ def chat(message: str, history: list, model_id: str, mcp_url: str, state):
             if "quota" in note:
                 parts.append(QUOTA_MSG)
             elif "gated" in note or "awaiting a review" in note or "access to model" in note or "401" in note:
-                parts.append(f"This model is gated. The Space needs an HF_TOKEN secret with access to it. ({type(exc).__name__})")
+                parts.append(f"This model is gated. Sign in with Hugging Face or add an HF_TOKEN secret with access to it. ({type(exc).__name__})")
             else:
                 parts.append(f"{MODEL_ERROR_PREFIX}{type(exc).__name__}: {exc}")
             state["trace"].observe("error", f"{type(exc).__name__}: {_brief(exc, 140)}", {"ok": False, "error_type": type(exc).__name__})
@@ -1567,7 +1579,7 @@ def chat(message: str, history: list, model_id: str, mcp_url: str, state):
                 {"role": route_role, "model": active_model, "char_count": prompt_chars, "token_est": _estimate_tokens('x' * prompt_chars)},
             )
             t0 = time.time()
-            reply = _sanitize_relay_templates(run_model(active_model, routed_msgs))
+            reply = _sanitize_relay_templates(run_model(active_model, routed_msgs, hf_token=hf_oauth_token))
             latency_ms = int((time.time() - t0) * 1000)
             current_msgs.append({"role": "assistant", "content": reply})
             prose = _agent_prose(reply)
@@ -1637,7 +1649,7 @@ def chat(message: str, history: list, model_id: str, mcp_url: str, state):
         if "quota" in note:
             parts.append(QUOTA_MSG)
         elif "gated" in note or "awaiting a review" in note or "access to model" in note or "401" in note:
-            parts.append(f"This model is gated. The Space needs an HF_TOKEN secret with access to it. ({type(exc).__name__})")
+            parts.append(f"This model is gated. Sign in with Hugging Face or add an HF_TOKEN secret with access to it. ({type(exc).__name__})")
         else:
             parts.append(f"{MODEL_ERROR_PREFIX}{type(exc).__name__}: {exc}")
         state["trace"].observe("error", f"{type(exc).__name__}: {_brief(exc, 140)}", {"ok": False, "error_type": type(exc).__name__})
@@ -2207,6 +2219,58 @@ def runtime_settings_state():
             "Settings are read-only here; sends, wallets, relays, and pins remain explicit approval paths.",
         ],
     }
+
+
+def runtime_settings_markdown() -> str:
+    settings = runtime_settings_state()
+    provider = settings["providers"]["huggingface_inference_providers"]
+    peer_links = settings["peer_links"]
+    link_service = settings["link_service"]
+    mcp_service = settings["mcp_service"]
+    cli_brain = settings["cli_brain"]
+    privacy = settings["privacy_defaults"]
+    space = settings["space"]
+    auth_line = (
+        "HF login is available in the model controls; provider calls use the signed-in user token first."
+        if not CLI_BRAIN
+        else "Local CLI-brain mode is active; the selected CLI agent is the brain."
+    )
+    agents = cli_brain.get("live_agents") or []
+    agent_names = ", ".join(str(item.get("agent") or item.get("name") or item) for item in agents) if agents else "none"
+    return "\n".join(
+        [
+            "### Continuum Settings",
+            "",
+            "**Hugging Face auth**",
+            f"- {auth_line}",
+            f"- Space secret fallback: {'configured' if space.get('hf_token_present') else 'not configured'}",
+            f"- Provider default: `{provider.get('default_provider')}:{provider.get('default_model')}`",
+            "",
+            "**MCP/SSE service links**",
+            f"- Saved service slots: {peer_links.get('count', 0)} / {peer_links.get('max_links', MAX_PEER_LINKS_UI)}",
+            "- Use the five boxes below to connect friend, group, work, or local Continuum MCP/SSE services.",
+            "",
+            "**Local service endpoints**",
+            f"- Continuum link service: `{link_service.get('url')}`",
+            f"- Link SSE stream: `{link_service.get('sse_all')}`",
+            f"- Continuum MCP/SSE: `{mcp_service.get('sse')}`",
+            f"- Continuum streamable HTTP: `{mcp_service.get('streamable_http')}`",
+            "",
+            "**Runtime mode**",
+            f"- Mode: `{settings.get('mode')}`",
+            f"- CLI brain enabled: `{cli_brain.get('enabled')}`",
+            f"- Live CLI agents: {agent_names}",
+            "",
+            "**Privacy defaults**",
+            f"- Raw link payload storage: `{privacy.get('link_store_raw')}`",
+            f"- Identifier storage: `{privacy.get('link_store_identifiers')}`",
+            f"- Raw content default: `{privacy.get('raw_default')}`",
+        ]
+    )
+
+
+def settings_refresh_values():
+    return (runtime_settings_markdown(), *_peer_link_values())
 
 
 def _tool_rows(hits: list[dict]) -> list[list[str]]:
@@ -2849,6 +2913,10 @@ with gr.Blocks(title=TITLE) as demo:
                     gr.Markdown("**Brain:** CLI relay — answered live by the agent at the channel.")
                 else:
                     model_dd = gr.Dropdown(choices=MODELS, value=DEFAULT_MODEL, label=MODEL_LABEL, elem_id="model-picker", scale=2)
+                    if RUNNING_ON_HF_SPACE:
+                        hf_login = gr.LoginButton(value="Sign in with Hugging Face", size="sm", scale=1)
+                    else:
+                        gr.Markdown("HF login appears on the Hugging Face Space. Local provider auth uses an HF token env var.")
             mcp_url = gr.Textbox(
                 label="One-off MCP/SSE service URL",
                 placeholder="https://.../mcp/sse",
@@ -2912,11 +2980,18 @@ with gr.Blocks(title=TITLE) as demo:
                         relay_box = gr.Textbox(label="Relay Command (click row to load)", scale=4, interactive=True)
                         paste_btn = gr.Button("Paste to chat ▸", scale=1)
                 with gr.TabItem("Settings"):
-                    settings_refresh = gr.Button("Refresh settings", size="sm")
-                    settings_state = gr.JSON(
-                        label="Runtime settings and accessible systems",
-                        value=runtime_settings_state(),
-                    )
+                    settings_summary = gr.Markdown(value=runtime_settings_markdown(), elem_id="settings-summary")
+                    with gr.Group(elem_id="settings-link-config"):
+                        gr.Markdown("**MCP/SSE service slots**")
+                        with gr.Row():
+                            settings_link_1 = gr.Textbox(label="Service 1", value=peer_link_defaults[0], placeholder="http://127.0.0.1:7872/mcp/sse")
+                            settings_link_2 = gr.Textbox(label="Service 2", value=peer_link_defaults[1], placeholder="https://friend.example/mcp/sse")
+                            settings_link_3 = gr.Textbox(label="Service 3", value=peer_link_defaults[2], placeholder="https://group.example/mcp/sse")
+                            settings_link_4 = gr.Textbox(label="Service 4", value=peer_link_defaults[3], placeholder="https://work.example/mcp/sse")
+                            settings_link_5 = gr.Textbox(label="Service 5", value=peer_link_defaults[4], placeholder="https://overflow.example/mcp/sse")
+                        with gr.Row():
+                            settings_save = gr.Button("Save & Connect Services", variant="secondary")
+                            settings_refresh = gr.Button("Refresh", size="sm")
                 with gr.TabItem("Memory"):
                     mem_refresh = gr.Button("Load / refresh memory", size="sm")
                     mem_status = gr.Markdown(
@@ -2946,11 +3021,28 @@ with gr.Blocks(title=TITLE) as demo:
     tool_search.change(browse_tools, [tool_search, session], [tool_status, tool_table])
     tool_table.select(on_select_tool, [tool_table], [relay_box])
     paste_btn.click(_paste_to_chat, [relay_box, box], [box])
-    settings_refresh.click(runtime_settings_state, None, [settings_state])
+    settings_refresh.click(
+        settings_refresh_values,
+        None,
+        [settings_summary, settings_link_1, settings_link_2, settings_link_3, settings_link_4, settings_link_5],
+    )
     peer_save.click(
         save_peer_links,
         [peer_link_1, peer_link_2, peer_link_3, peer_link_4, peer_link_5, session],
-        [peer_link_status, session, settings_state, tool_status, tool_table],
+        [peer_link_status, session, settings_summary, tool_status, tool_table],
+    ).then(
+        _peer_link_values,
+        None,
+        [settings_link_1, settings_link_2, settings_link_3, settings_link_4, settings_link_5],
+    )
+    settings_save.click(
+        save_peer_links,
+        [settings_link_1, settings_link_2, settings_link_3, settings_link_4, settings_link_5, session],
+        [peer_link_status, session, settings_summary, tool_status, tool_table],
+    ).then(
+        _peer_link_values,
+        None,
+        [peer_link_1, peer_link_2, peer_link_3, peer_link_4, peer_link_5],
     )
     mem_refresh.click(load_trace_table, [session], [mem_table, mem_status])
     mem_table.select(inspect_node, [session], [mem_detail])

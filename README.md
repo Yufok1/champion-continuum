@@ -5,7 +5,9 @@ colorFrom: yellow
 colorTo: red
 sdk: gradio
 app_file: app.py
-hf_oauth: false
+hf_oauth: true
+hf_oauth_scopes:
+  - inference-api
 pinned: false
 license: mit
 short_description: He doesn't always remember. When he does, it's continuity.
@@ -160,13 +162,13 @@ Google APIs, or relay over Nostr.
 
 ## Settings And Readiness
 
-The deck includes a **Settings** tab that summarizes the current operating
-mode, local link URL, token-file status, CLI-brain roster, HF provider posture,
-translation faculty readiness, privacy defaults, and peer-link capacity.
+The deck includes a **Settings** surface with real controls for the five
+MCP/SSE service slots plus readable status for HF auth, provider posture,
+local endpoints, CLI-brain roster, privacy defaults, and peer-link capacity.
 
-The link service exposes the same operational posture at `GET /settings`. This
-is read-only. It is for operator visibility and agent orientation, not hidden
-configuration mutation.
+The link service exposes the same operational posture at `GET /settings` for
+agent orientation. The deck Settings surface is the operator configuration
+path for the five visible MCP/SSE service links.
 
 ### MCP Tool Socket
 This Space is now a **Universal MCP Proxy**:

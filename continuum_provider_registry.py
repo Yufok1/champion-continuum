@@ -80,7 +80,9 @@ def parse_provider_model_id(model_id: str) -> tuple[str, str] | None:
     return provider or HF_DEFAULT_PROVIDER, model or HF_DEFAULT_MODEL
 
 
-def _token() -> str:
+def _token(token_override: str | None = None) -> str:
+    if token_override:
+        return token_override
     for name in ("HF_TOKEN", "HUGGINGFACEHUB_API_TOKEN", "HUGGINGFACE_HUB_TOKEN"):
         value = os.environ.get(name)
         if value:
@@ -130,14 +132,21 @@ def _extract_completion_text(result: Any) -> str:
     return _message_text(result)
 
 
-def run_hf_provider_chat(model_id: str, messages: list[dict[str, Any]], max_tokens: int = 900) -> str:
+def run_hf_provider_chat(
+    model_id: str,
+    messages: list[dict[str, Any]],
+    max_tokens: int = 900,
+    token_override: str | None = None,
+) -> str:
     parsed = parse_provider_model_id(model_id)
     if parsed is None:
         raise ValueError("not an HF provider model id")
     provider, model = parsed
-    token = _token()
+    token = _token(token_override)
     if not token:
-        raise RuntimeError("HF Inference Providers require HF_TOKEN or HUGGINGFACE_HUB_TOKEN.")
+        raise RuntimeError(
+            "HF Inference Providers require Sign in with Hugging Face or an HF_TOKEN/HUGGINGFACE_HUB_TOKEN secret."
+        )
     try:
         from huggingface_hub import InferenceClient
     except Exception as exc:
