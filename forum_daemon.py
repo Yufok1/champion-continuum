@@ -71,6 +71,64 @@ POLL_EVERY = float(_conf("poll_every", "FORUM_POLL", 1.0))
 ANSWER_TIMEOUT = int(_conf("answer_timeout", "FORUM_TIMEOUT", 600))
 
 
+def _list_conf(key: str, env: str, default: list[str]) -> list[str]:
+    value = _conf(key, env, default)
+    if isinstance(value, str):
+        return [item.strip() for item in value.split(",") if item.strip()]
+    if isinstance(value, list):
+        return [str(item).strip() for item in value if str(item).strip()]
+    return list(default)
+
+
+def _bool_conf(key: str, env: str, default: bool = False) -> bool:
+    value = _conf(key, env, default)
+    if isinstance(value, bool):
+        return value
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _float_conf(key: str, env: str, default: float = 0.0) -> float:
+    value = _conf(key, env, default)
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return float(default)
+
+
+def capability_card() -> dict:
+    permissions = dict(_CFG.get("permissions") or {})
+    permissions.update({
+        "can_delete": _bool_conf("can_delete", "FORUM_CAN_DELETE", bool(permissions.get("can_delete", False))),
+        "can_publish": _bool_conf("can_publish", "FORUM_CAN_PUBLISH", bool(permissions.get("can_publish", False))),
+        "can_send_messages": _bool_conf("can_send_messages", "FORUM_CAN_SEND_MESSAGES", bool(permissions.get("can_send_messages", False))),
+        "can_move_funds": _bool_conf("can_move_funds", "FORUM_CAN_MOVE_FUNDS", bool(permissions.get("can_move_funds", False))),
+        "can_change_auth": _bool_conf("can_change_auth", "FORUM_CAN_CHANGE_AUTH", bool(permissions.get("can_change_auth", False))),
+        "requires_operator_approval_for_external_effects": _bool_conf(
+            "requires_operator_approval_for_external_effects",
+            "FORUM_REQUIRES_OPERATOR_APPROVAL",
+            bool(permissions.get("requires_operator_approval_for_external_effects", True)),
+        ),
+    })
+    limits = dict(_CFG.get("limits") or {})
+    limits.update({
+        "max_job_seconds": int(_float_conf("max_job_seconds", "FORUM_MAX_JOB_SECONDS", float(limits.get("max_job_seconds", ANSWER_TIMEOUT)))),
+        "max_retries": int(_float_conf("max_retries", "FORUM_MAX_RETRIES", float(limits.get("max_retries", 1)))),
+        "max_kleene_iterations": int(_float_conf("max_kleene_iterations", "FORUM_MAX_KLEENE_ITERATIONS", float(limits.get("max_kleene_iterations", 3)))),
+        "max_spend_usd": _float_conf("max_spend_usd", "FORUM_MAX_SPEND_USD", float(limits.get("max_spend_usd", 0.0))),
+    })
+    return {
+        "schema": "champion-continuum/utility-daemon-card/v1",
+        "agent": AGENT,
+        "kind": str(_conf("kind", "FORUM_KIND", "utility_daemon")),
+        "capabilities": _list_conf("capabilities", "FORUM_CAPABILITIES", ["chat"]),
+        "outputs": _list_conf("outputs", "FORUM_OUTPUTS", ["text"]),
+        "cost_mode": str(_conf("cost_mode", "FORUM_COST_MODE", "unknown")),
+        "risk_level": str(_conf("risk_level", "FORUM_RISK_LEVEL", "unknown")),
+        "permissions": permissions,
+        "limits": limits,
+    }
+
+
 def _agent_cmd_for_stdin_prompt() -> str:
     """Return a command that can accept the real prompt on stdin.
 
@@ -97,6 +155,7 @@ def heartbeat() -> None:
             "busy": False,
             "can_speak": bool(AGENT_CMD),
             "can_watch": bool(AGENT_CMD),
+            "capability_card": capability_card(),
         }),
         encoding="utf-8",
     )

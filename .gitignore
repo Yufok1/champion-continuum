@@ -26,3 +26,4 @@ success_fix_test/
 *.err.log
 deck_run.log
 app.py.p*
+assets/continuum_wallpaper_preview.jpg

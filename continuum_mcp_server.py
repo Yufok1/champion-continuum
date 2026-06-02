@@ -10,6 +10,7 @@ from typing import Any
 from mcp.server.fastmcp import FastMCP
 
 from champion_continuum import Continuum, process_text
+from continuum_daemon_registry import load_daemon_registry, match_daemons
 from continuum_link_server import (
     ALL_SLOTS,
     CHANNEL,
@@ -24,12 +25,30 @@ from continuum_link_server import (
     _slot_counts,
     _state,
 )
+from continuum_music_forge import (
+    compose_song_packet,
+    generate_music_preset,
+    generate_hf_space_song,
+    hf_space_schema,
+    music_backend_preset_payload,
+    music_forge_state,
+)
 from continuum_provider_registry import provider_registry_state
 from continuum_translation_faculty import build_translation_faculty_packet, translation_faculty_state
 from continuum_whatsapp_adapter import build_send_intent, build_wallet_intent
 
 
 SHARED_STORE_ROOT = Path(os.environ.get("CONTINUUM_SHARED_STORE", CHANNEL / "shared_store"))
+
+BACKGROUND_MEDIA_CANDIDATES = [
+    "continuum_wallpaper.html",
+    "continuum_wallpaper.webm",
+    "continuum_wallpaper.mp4",
+    "continuum_wallpaper.gif",
+    "continuum_wallpaper.png",
+    "continuum_wallpaper.jpg",
+    "continuum_wallpaper.jpeg",
+]
 
 
 def _continuum() -> Continuum:
@@ -57,12 +76,40 @@ def _append_or_raise(event: dict[str, Any]) -> dict[str, Any]:
     return event
 
 
+def _expressive_wallpaper_state() -> dict[str, Any]:
+    configured = os.environ.get("CONTINUUM_BACKGROUND_MEDIA") or os.environ.get("CONTINUUM_WALLPAPER_MEDIA") or ""
+    selected = configured.strip()
+    if not selected:
+        asset_dir = ROOT / "assets"
+        for name in BACKGROUND_MEDIA_CANDIDATES:
+            candidate = asset_dir / name
+            if candidate.exists():
+                selected = str(candidate)
+                break
+    suffix = Path(selected.split("?", 1)[0]).suffix.lower() if selected else ""
+    return {
+        "status": "ok",
+        "schema": "champion-continuum/expressive-wallpaper/v1",
+        "active": bool(selected),
+        "asset": selected,
+        "kind": "web_wallpaper" if suffix in {".html", ".htm"} else ("video" if suffix in {".webm", ".mp4", ".mov", ".m4v"} else ("image" if selected else "none")),
+        "speech_rain_ready": bool(selected and suffix in {".html", ".htm"}),
+        "control_contract": {
+            "type": "continuum:speech-rain",
+            "transport": "deck postMessage to embedded wallpaper iframe",
+            "inputs": ["assistant_text", "council_text", "daemon_directive"],
+            "outputs": ["glyph_rain", "pattern", "direction", "color", "speed", "intensity"],
+            "mutates_external_state": False,
+        },
+    }
+
+
 def create_mcp(host: str, port: int) -> FastMCP:
     mcp = FastMCP(
         "Champion Continuum MCP",
         instructions=(
             "Champion Continuum exposes memory, tool relay, room, event, provider, "
-            "translation, WhatsApp-intent, wallet-intent, and receipt surfaces for "
+            "translation, music-forge, WhatsApp-intent, wallet-intent, and receipt surfaces for "
             "tool-less agents. External effects are intents only unless an operator "
             "adds an approval layer."
         ),
@@ -113,6 +160,137 @@ def create_mcp(host: str, port: int) -> FastMCP:
     def continuum_providers() -> dict[str, Any]:
         """Read available model/provider routing posture."""
         return {"status": "ok", "provider_registry": provider_registry_state()}
+
+    @mcp.tool()
+    def continuum_utility_daemons() -> dict[str, Any]:
+        """Read live utility daemon capability cards and safety posture."""
+        return load_daemon_registry(CHANNEL)
+
+    @mcp.tool()
+    def continuum_expressive_wallpaper() -> dict[str, Any]:
+        """Read expressive wallpaper readiness and the council speech-rain control contract."""
+        return _expressive_wallpaper_state()
+
+    @mcp.tool()
+    def continuum_match_daemons(capability: str = "", output: str = "", include_stale: bool = False) -> dict[str, Any]:
+        """Find live utility daemons by capability/output type."""
+        return match_daemons(capability=capability, output=output, include_stale=include_stale)
+
+    @mcp.tool()
+    def continuum_music_forge_state() -> dict[str, Any]:
+        """Read Music Forge readiness, output directory, and suggested public HF music Spaces."""
+        return music_forge_state()
+
+    @mcp.tool()
+    def continuum_music_compose_packet(
+        idea: str,
+        style: str = "",
+        lyrics: str = "",
+        language: str = "en-US",
+        duration: str = "30 seconds",
+        avoid: str = "Do not mimic living artists or request a copyrighted song clone.",
+    ) -> dict[str, Any]:
+        """Build a song prompt/lyrics packet for a music generation backend."""
+        return compose_song_packet(
+            idea=idea,
+            style=style,
+            lyrics=lyrics,
+            language=language,
+            duration=duration,
+            avoid=avoid,
+        )
+
+    @mcp.tool()
+    def continuum_music_hf_space_schema(space_id: str = "ACE-Step/Ace-Step-v1.5") -> dict[str, Any]:
+        """Inspect a Hugging Face music Space API before generating audio."""
+        return hf_space_schema(space_id)
+
+    @mcp.tool()
+    def continuum_music_backend_preset(
+        backend: str = "ace_jam",
+        prompt: str = "",
+        lyrics: str = "",
+        duration: float = 30.0,
+        seed: int = -1,
+    ) -> dict[str, Any]:
+        """Build a ready-to-call public music backend payload."""
+        return music_backend_preset_payload(
+            backend=backend,
+            prompt=prompt,
+            lyrics=lyrics,
+            duration=duration,
+            seed=seed,
+        )
+
+    @mcp.tool()
+    def continuum_music_generate_preset(
+        backend: str = "ace_jam",
+        prompt: str = "",
+        lyrics: str = "",
+        duration: float = 30.0,
+        seed: int = -1,
+        title: str = "",
+    ) -> dict[str, Any]:
+        """Generate music through a known public HF Space preset and save returned audio files locally."""
+        result = generate_music_preset(
+            backend=backend,
+            prompt=prompt,
+            lyrics=lyrics,
+            duration=duration,
+            seed=seed,
+            title=title,
+        )
+        event = _make_event(
+            {
+                "kind": "continuum.music.generated",
+                "slot": "facilities",
+                "payload": {
+                    "backend": backend,
+                    "title": title or prompt[:80],
+                    "status": result.get("status"),
+                    "run_dir": result.get("run_dir"),
+                    "manifest_path": result.get("manifest_path"),
+                    "saved_files": result.get("saved_files", []),
+                },
+            },
+            source="mcp-music-forge",
+        )
+        result["event"] = _append_or_raise(event)
+        return result
+
+    @mcp.tool()
+    def continuum_music_generate_hf_space(
+        space_id: str = "ACE-Step/Ace-Step-v1.5",
+        prompt: str = "",
+        payload_json: str = "",
+        api_name: str = "/predict",
+        title: str = "",
+    ) -> dict[str, Any]:
+        """Call a Hugging Face music Space and save returned audio files locally."""
+        result = generate_hf_space_song(
+            space_id=space_id,
+            prompt=prompt,
+            payload_json=payload_json,
+            api_name=api_name,
+            title=title,
+        )
+        event = _make_event(
+            {
+                "kind": "continuum.music.generated",
+                "slot": "facilities",
+                "payload": {
+                    "space_id": space_id,
+                    "title": title or prompt[:80],
+                    "status": result.get("status"),
+                    "run_dir": result.get("run_dir"),
+                    "manifest_path": result.get("manifest_path"),
+                    "saved_files": result.get("saved_files", []),
+                },
+            },
+            source="mcp-music-forge",
+        )
+        result["event"] = _append_or_raise(event)
+        return result
 
     @mcp.tool()
     def continuum_links() -> dict[str, Any]:

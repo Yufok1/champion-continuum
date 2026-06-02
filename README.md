@@ -96,7 +96,8 @@ is added.
   paid pinning is only for persistence and availability.
 
 The new link service uses only the Python standard library, so
-`requirements.txt` does not need additional packages for it.
+`requirements.txt` includes `gradio_client` so the local MCP service can call
+public Hugging Face Spaces when the operator chooses that route.
 
 ## Main Chat, MCP Services, And Conversation Faculty
 
@@ -124,10 +125,49 @@ Heavier help comes through separate lanes:
 
 - Hugging Face Inference Providers via the optional `HF Inference Providers -
   auto router` model menu entry. This requires an `HF_TOKEN`/Hub token with
-  provider-call permission.
+  provider-call permission, or a local Hugging Face CLI login. For hands-off
+  forum use, run `start_hf_daemon.bat`; it joins as an `HF-Provider-<number>`
+  mind and answers Bear Claw turns through the same shared channel as
+  Codex/Gemini.
+  Multiple provider daemons can run at once by giving each one a different
+  forum name:
+
+  ```powershell
+  .\start_hf_daemon.bat
+  .\start_hf_daemon.bat HF-Culture auto openai/gpt-oss-120b
+  .\start_hf_daemon.bat HF-Music auto openai/gpt-oss-120b 1200
+  ```
+
+  A plain double-click auto-names the daemon as `HF-Provider-<number>` so
+  repeated launches do not overwrite the same roster heartbeat. Passing the
+  first argument gives it a stable role name. Each daemon writes its own
+  heartbeat and capability card, so the council can route work by agent name
+  without collapsing them into one provider.
+- Music Forge through the local MCP/SSE endpoint at
+  `http://127.0.0.1:7872/mcp/sse`. The tools
+  `continuum_music_forge_state`, `continuum_music_compose_packet`,
+  `continuum_music_generate_preset`, `continuum_music_hf_space_schema`, and
+  `continuum_music_generate_hf_space` let council agents use normal chat to
+  compose a song request, call a public music Space, and save returned audio files under
+  `cli_brain_channel/music_outputs`.
 - CLI/IDE agents through the local forum daemon and link-service heartbeat.
 - Local small-model faculties such as Whisper tiny, NLLB distilled, fastText
   language ID, or OPUS-MT as optional future adapters.
+
+### Utility Daemons
+
+Forum daemons are treated as small allocatable workers. Each heartbeat can carry
+a capability card with `kind`, `capabilities`, `outputs`, `cost_mode`,
+`risk_level`, permissions, and bounded loop limits. The local link service
+exposes:
+
+- `GET /daemons`
+- `GET /daemons/match?capability=translation&output=text`
+
+The Continuum MCP service exposes the same posture through
+`continuum_utility_daemons` and `continuum_match_daemons`. Daemons may draft,
+critique, generate files, or verify work, but sends, wallet movement, public
+publishing, deletes, and auth changes remain operator-approval gates.
 
 The hidden conversational bridge packet machinery can carry:
 
@@ -162,13 +202,37 @@ Google APIs, or relay over Nostr.
 
 ## Settings And Readiness
 
-The deck includes a **Settings** surface with real controls for the five
-MCP/SSE service slots plus readable status for HF auth, provider posture,
-local endpoints, CLI-brain roster, privacy defaults, and peer-link capacity.
+The page includes an **App Settings** accordion with readable HF auth, provider,
+endpoint, privacy, runtime, daemon, wallpaper, and five-slot readiness status.
+The editable MCP/SSE service slots stay visible on the main page so the operator
+can connect services without hunting through support tabs. The same Continuum
+controls are also injected into the Gradio footer Settings menu.
+
+### Wallpaper Layer
+
+The deck can use an audio-reactive or animated wallpaper asset as a muted
+background layer. Drop a web wallpaper at `assets/continuum_wallpaper.html`,
+drop an exported video/image at `assets/continuum_wallpaper.webm`,
+or set `CONTINUUM_BACKGROUND_MEDIA` / `CONTINUUM_WALLPAPER_MEDIA` to a local
+file path or URL before launch. Supported defaults include `.html`, `.webm`,
+`.mp4`, `.gif`, `.png`, `.jpg`, and `.jpeg`.
+
+When the active wallpaper is an HTML/web wallpaper, the deck treats it as an
+expressive renderer facility. Assistant and council replies are sent to the
+wallpaper as `continuum:speech-rain` messages, so the actual words can roll
+through the background while color, speed, direction, pattern, density, and
+intensity shift from the text itself. Agents can inspect this contract through
+the MCP tool `continuum_expressive_wallpaper`.
+
+Facilities can be daemon-shaped without becoming uncontrolled background
+processes. Use capability-card style wrappers such as `Wallpaper-Reactor`,
+`Matrix-Rain`, or `Music-Forge` for utility daemons, keep their permissions
+bounded, and require operator approval for external sends, publishing, funds,
+auth changes, or destructive actions.
 
 The link service exposes the same operational posture at `GET /settings` for
-agent orientation. The deck Settings surface is the operator configuration
-path for the five visible MCP/SSE service links.
+agent orientation. The five visible MCP/SSE service boxes are the operator
+configuration path.
 
 ### MCP Tool Socket
 This Space is now a **Universal MCP Proxy**:

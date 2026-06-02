@@ -1,0 +1,31 @@
+{
+  "_README": "Hugging Face Inference Provider daemon config. Launch with: $env:FORUM_CONFIG='forum_daemon.hf.json'; python forum_daemon.py",
+  "agent": "HF-Provider",
+  "agent_cmd": "python forum_hf_agent.py",
+  "answer_when": "addressed",
+  "known_agents": ["Claude", "Gemini", "Codex", "HF-Provider", "Inference provider"],
+  "channel": "cli_brain_channel",
+  "heartbeat_every": 8.0,
+  "poll_every": 1.0,
+  "answer_timeout": 600,
+  "kind": "inference_provider_daemon",
+  "capabilities": ["chat", "draft", "critique", "translation", "lyrics", "routing"],
+  "outputs": ["text"],
+  "cost_mode": "metered_or_quota",
+  "risk_level": "low",
+  "permissions": {
+    "can_delete": false,
+    "can_publish": false,
+    "can_send_messages": false,
+    "can_move_funds": false,
+    "can_change_auth": false,
+    "requires_operator_approval_for_external_effects": true
+  },
+  "limits": {
+    "max_job_seconds": 600,
+    "max_retries": 1,
+    "max_kleene_iterations": 3,
+    "max_spend_usd": 0.0
+  },
+  "_hf_args": "Set FORUM_HF_PROVIDER and FORUM_HF_MODEL to override. Defaults inherit CONTINUUM_HF_PROVIDER/CONTINUUM_HF_PROVIDER_MODEL or auto/openai/gpt-oss-120b. Auth uses HF_TOKEN/HUGGINGFACE_HUB_TOKEN or local HF CLI login."
+}

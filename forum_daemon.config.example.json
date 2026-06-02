@@ -14,6 +14,26 @@
   "poll_every": 1.0,
   "answer_timeout": 600,
 
+  "kind": "utility_daemon",
+  "capabilities": ["chat"],
+  "outputs": ["text"],
+  "cost_mode": "unknown",
+  "risk_level": "low",
+  "permissions": {
+    "can_delete": false,
+    "can_publish": false,
+    "can_send_messages": false,
+    "can_move_funds": false,
+    "can_change_auth": false,
+    "requires_operator_approval_for_external_effects": true
+  },
+  "limits": {
+    "max_job_seconds": 600,
+    "max_retries": 1,
+    "max_kleene_iterations": 3,
+    "max_spend_usd": 0.0
+  },
+
   "_agent_cmd_help": "The CLI that answers. It must print the reply to stdout. By default the prompt is piped on STDIN (works for 'claude -p'). If your CLI takes a file, put {prompt_file} in the command and it is replaced by a temp file path, e.g. 'mycli --file {prompt_file}'.",
   "_examples": {
     "claude": "claude -p",

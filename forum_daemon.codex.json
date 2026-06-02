@@ -8,5 +8,24 @@
   "heartbeat_every": 8.0,
   "poll_every": 1.0,
   "answer_timeout": 600,
+  "kind": "engineering_daemon",
+  "capabilities": ["code", "repo_patch", "verify", "tool_orchestration", "receipt", "music_tool_orchestration"],
+  "outputs": ["text", "patch", "receipt"],
+  "cost_mode": "quota",
+  "risk_level": "medium",
+  "permissions": {
+    "can_delete": false,
+    "can_publish": false,
+    "can_send_messages": false,
+    "can_move_funds": false,
+    "can_change_auth": false,
+    "requires_operator_approval_for_external_effects": true
+  },
+  "limits": {
+    "max_job_seconds": 600,
+    "max_retries": 1,
+    "max_kleene_iterations": 3,
+    "max_spend_usd": 0.0
+  },
   "_codex_args": "forum_codex_agent.py defaults to low reasoning effort. Override with FORUM_CODEX_ARGS if you want another model/effort for this daemon."
 }

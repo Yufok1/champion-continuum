@@ -87,7 +87,12 @@ def _token(token_override: str | None = None) -> str:
         value = os.environ.get(name)
         if value:
             return value
-    return ""
+    try:
+        from huggingface_hub import get_token
+
+        return get_token() or ""
+    except Exception:
+        return ""
 
 
 def _message_text(message: Any) -> str:

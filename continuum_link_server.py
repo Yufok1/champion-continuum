@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
+from continuum_daemon_registry import load_daemon_registry, match_daemons
 from continuum_whatsapp_adapter import (
     asset_registry_state,
     build_send_intent,
@@ -367,6 +368,7 @@ def _state() -> dict[str, Any]:
         "slots": list(DEFAULT_SLOTS),
         "slot_counts": _slot_counts(),
         "peer_links": _peer_link_state(),
+        "utility_daemons": load_daemon_registry(CHANNEL),
         "recent_event_ids": [str(event.get("event_id") or "") for event in recent],
         "endpoints": {
             "health": "/health",
@@ -376,6 +378,8 @@ def _state() -> dict[str, Any]:
             "faculties": "/faculties",
             "providers": "/providers",
             "heartbeat": "/heartbeat",
+            "daemons": "/daemons",
+            "daemon_match": "/daemons/match?capability=translation&output=text",
             "links": "/links",
             "link_register": "/link/register",
             "events": "/events?slot=personal&limit=50",
@@ -447,6 +451,7 @@ def _settings_state() -> dict[str, Any]:
         "privacy": state["privacy"],
         "providers": provider_registry_state(),
         "faculties": translation_faculty_state(),
+        "utility_daemons": load_daemon_registry(CHANNEL),
         "peer_links": _peer_link_state(),
         "endpoints": state["endpoints"],
         "operator_notes": [
@@ -618,6 +623,16 @@ class ContinuumLinkHandler(BaseHTTPRequestHandler):
             return
         if parsed.path == "/providers":
             self._send_json({"status": "ok", "provider_registry": provider_registry_state()})
+            return
+        if parsed.path == "/daemons":
+            self._send_json(load_daemon_registry(CHANNEL))
+            return
+        if parsed.path == "/daemons/match":
+            query = parse_qs(parsed.query)
+            capability = (query.get("capability") or [""])[0]
+            output = (query.get("output") or [""])[0]
+            include_stale = (query.get("include_stale") or ["0"])[0].lower() in {"1", "true", "yes", "on"}
+            self._send_json(match_daemons(capability=capability, output=output, include_stale=include_stale))
             return
         if parsed.path == "/links":
             self._send_json({"status": "ok", "peer_links": _peer_link_state()})

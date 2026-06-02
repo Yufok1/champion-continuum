@@ -8,5 +8,24 @@
   "heartbeat_every": 8.0,
   "poll_every": 1.0,
   "answer_timeout": 600,
+  "kind": "auditor_daemon",
+  "capabilities": ["audit", "critique", "culture", "translation", "alternate_reasoning"],
+  "outputs": ["text", "watch_note"],
+  "cost_mode": "quota",
+  "risk_level": "low",
+  "permissions": {
+    "can_delete": false,
+    "can_publish": false,
+    "can_send_messages": false,
+    "can_move_funds": false,
+    "can_change_auth": false,
+    "requires_operator_approval_for_external_effects": true
+  },
+  "limits": {
+    "max_job_seconds": 600,
+    "max_retries": 1,
+    "max_kleene_iterations": 3,
+    "max_spend_usd": 0.0
+  },
   "_gemini_args": "forum_gemini_agent.py adds local workbench doctrine and then calls gemini -p \" \". Override FORUM_GEMINI_CMD if needed."
 }

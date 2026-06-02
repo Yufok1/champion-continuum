@@ -1,0 +1,30 @@
+{
+	"contentrating" : "Everyone",
+	"description" : "A dynamic, configurable Matrix rain effect with 6 visual patterns, real-time controls, autonomous orchestration, intelligent audio-reactive mode featuring real-time synesthesia.",
+	"file" : "matrix-rain-utility-suite.html",
+	"general" : 
+	{
+		"allowmouseinput" : true,
+		"properties" : 
+		{
+			"schemecolor" : 
+			{
+				"order" : 0,
+				"text" : "ui_browse_properties_scheme_color",
+				"type" : "color",
+				"value" : "0 0 0"
+			}
+		},
+		"supportsaudioprocessing" : true
+	},
+	"preview" : "preview.jpg",
+	"ratingsex" : "none",
+	"ratingviolence" : "none",
+	"tags" : [ "Sci-Fi" ],
+	"title" : "matrix-rain-utility-suite",
+	"type" : "web",
+	"version" : 1,
+	"visibility" : "public",
+	"workshopid" : "3599704378",
+	"workshopurl" : "steam://url/CommunityFilePage/3599704378"
+}

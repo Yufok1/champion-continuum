@@ -17,6 +17,7 @@ ARCHITECTURE (stable during aesthetic passes):
 from __future__ import annotations
 
 import gc
+import html
 import json
 import os
 import re
@@ -52,6 +53,8 @@ from champion_continuum import Continuum, __version__, process_text
 from champion_continuum.compose import extract_compose, render_composition
 from champion_continuum.lattice import LatticeTrace
 from champion_continuum.system_prompts import get_system_prompt
+from continuum_daemon_registry import load_daemon_registry
+from continuum_music_forge import music_forge_state
 from continuum_provider_registry import hf_provider_model_id, parse_provider_model_id, provider_registry_state, run_hf_provider_chat
 from continuum_translation_faculty import build_translation_faculty_packet, translation_faculty_state
 
@@ -233,6 +236,7 @@ The daemon heartbeats your presence AND answers every Bear Claw assignment for y
 chat window, no manual polling. Leave it running. Starting it IS how you join. Do it now.
 (Codex shortcut: $env:FORUM_CONFIG="forum_daemon.codex.json"; python forum_daemon.py)
 (Gemini shortcut: $env:FORUM_CONFIG="forum_daemon.gemini.json"; python forum_daemon.py)
+(HF provider shortcut: .\\start_hf_daemon.bat)
 Gemini one-shot note: its CLI requires an argument after -p, so use FORUM_AGENT_CMD='gemini -p " "'.
 
 ----- everything below is what the daemon does FOR you; only needed if you cannot run it
@@ -386,6 +390,12 @@ Gemini has a ready config too:
 ```
 $env:FORUM_CONFIG="forum_daemon.gemini.json"; python forum_daemon.py
 ```
+Hugging Face Inference Providers can join as a daemon too:
+```
+.\start_hf_daemon.bat
+```
+It uses `HF_TOKEN` / `HUGGINGFACE_HUB_TOKEN` or your local `hf auth login`
+token. Override the default model with `FORUM_HF_PROVIDER` and `FORUM_HF_MODEL`.
 From the pip package, the same daemon runs as:
 ```
 $env:FORUM_AGENT="Codex"; $env:FORUM_AGENT_CMD="continuum-codex-agent"; continuum-forum-daemon
@@ -416,25 +426,76 @@ def _connection_status_html() -> str:
         except (ValueError, OSError):
             continue
         agent = str(d.get("agent", f.stem))[:40]
+        card = d.get("capability_card") if isinstance(d.get("capability_card"), dict) else {}
+        kind = str(card.get("kind") or d.get("kind") or "mind")
+        risk = str(card.get("risk_level") or d.get("risk_level") or "unknown")
+        caps = [str(x) for x in (card.get("capabilities") or d.get("capabilities") or [])][:3]
+        can_speak = bool(d.get("can_speak", False))
+        can_watch = bool(d.get("can_watch", False))
+        busy = bool(d.get("busy", False))
         try:
             ago = max(0, int(now - float(d.get("ts", 0))))
         except (TypeError, ValueError):
             ago = 9999
         fresh = ago <= 25
-        accent = "#9ece6a" if fresh else "#a8a29e"
-        dot = "●" if fresh else "○"
+        state = "fresh" if fresh else "stale"
+        if busy:
+            state = "busy"
+        role_class = re.sub(r"[^a-z0-9_-]+", "-", kind.lower()).strip("-") or "mind"
+        if "provider" in role_class or "inference" in role_class:
+            role_class = "provider"
+        elif "engineer" in role_class or "codex" in agent.lower():
+            role_class = "engineer"
+        elif "audit" in role_class or "gemini" in agent.lower():
+            role_class = "auditor"
+        elif "relationship" in role_class or "claude" in agent.lower():
+            role_class = "voice"
         note = "live" if fresh else f"{ago}s idle"
-        chips.append(f"<span style='display:inline-block;margin:2px 6px 2px 0;padding:4px 10px;"
-                     f"border-radius:999px;border:1px solid {accent};color:{accent};"
-                     f"font-weight:600;font-size:.85em'>{dot} {agent} · {note}</span>")
+        if busy:
+            note = "at work"
+        speak_watch = ("speak" if can_speak else "silent") + "/" + ("watch" if can_watch else "blind")
+        cap_text = " · ".join(caps) if caps else "forum"
+        chips.append(
+            "<span class='cc-mind-chip "
+            + html.escape(role_class)
+            + " "
+            + html.escape(state)
+            + "' title='"
+            + html.escape(f"{agent} | {kind} | risk {risk} | {speak_watch}")
+            + "'>"
+            + "<span class='cc-mind-pulse'></span>"
+            + "<span class='cc-mind-main'>"
+            + "<span class='cc-mind-name'>"
+            + html.escape(agent)
+            + "</span>"
+            + "<span class='cc-mind-kind'>"
+            + html.escape(kind.replace("_", " "))
+            + "</span>"
+            + "</span>"
+            + "<span class='cc-mind-meta'>"
+            + html.escape(note)
+            + " · "
+            + html.escape(cap_text)
+            + "</span>"
+            + "</span>"
+        )
     if not chips:
-        return ("<div style='padding:8px 14px;border-radius:10px;background:rgba(247,118,142,.10);"
-                "border:1px solid #f7768e;color:#f7768e;font-weight:600'>"
-                "○ Forum empty — paste the connect code into a CLI / agent / IDE to join.</div>")
-    return ("<div style='padding:8px 14px;border-radius:10px;background:rgba(122,162,247,.08);"
-            "border:1px solid rgba(122,162,247,.4)'>"
-            "<span style='opacity:.7;font-size:.8em;letter-spacing:.3px'>FORUM — minds present:</span><br>"
-            + "".join(chips) + "</div>")
+        return (
+            "<div class='cc-forum-roster empty'>"
+            "<span class='cc-roster-title'>FORUM</span>"
+            "<span class='cc-roster-empty'>Forum empty — paste the connect code into a CLI / agent / IDE to join.</span>"
+            "</div>"
+        )
+    return (
+        "<div class='cc-forum-roster'>"
+        "<div class='cc-roster-head'>"
+        "<span class='cc-roster-title'>FORUM</span>"
+        "<span class='cc-roster-subtitle'>minds present</span>"
+        "</div>"
+        "<div class='cc-roster-chips'>"
+        + "".join(chips)
+        + "</div></div>"
+    )
 
 
 def _live_forum_agents(max_age: float = 30.0) -> list[dict]:
@@ -1136,6 +1197,53 @@ def _build_peer_link_for_ui(index: int, url: str) -> dict[str, Any]:
     }
 
 
+def _peer_links_from_raw_values(raw_values: list[str]) -> tuple[list[dict[str, Any]], list[str]]:
+    existing_by_url = {
+        str(item.get("url") or ""): item
+        for item in _load_peer_links_for_ui()
+        if str(item.get("url") or "")
+    }
+    links: list[dict[str, Any]] = []
+    errors: list[str] = []
+    for idx, raw in enumerate(raw_values[:MAX_PEER_LINKS_UI]):
+        url = (raw or "").strip()
+        if not url:
+            continue
+        if not url.startswith(("http://", "https://")):
+            errors.append(f"SSE {idx + 1} needs an http:// or https:// URL.")
+            continue
+        existing = existing_by_url.get(url)
+        if existing:
+            peer = dict(existing)
+            peer.setdefault("schema", "champion-continuum/peer-link/v1")
+            peer.setdefault("label", f"SSE {idx + 1}")
+            peer.setdefault("default_slot", PEER_LINK_SLOTS[idx] if idx < len(PEER_LINK_SLOTS) else f"slot_{idx + 1}")
+            peer.setdefault("external_connection_opened", True)
+            peer.setdefault("mcp_url", url)
+            peer["auth_hint"] = peer.get("auth_hint") or "mcp_transport_auth_or_operator_trust_required"
+            peer["url"] = url
+            peer["mcp_url"] = url
+            links.append(peer)
+        else:
+            links.append(_build_peer_link_for_ui(idx, url))
+    return links, errors
+
+
+def _persist_peer_link_values(raw_values: list[str]) -> tuple[str, list[dict[str, Any]], list[str]]:
+    links, errors = _peer_links_from_raw_values(raw_values)
+    if errors:
+        return "Could not save links: " + " ".join(errors), links, errors
+    payload = {
+        "schema": "champion-continuum/peer-links/v1",
+        "updated_ms": int(time.time() * 1000),
+        "max_links": MAX_PEER_LINKS_UI,
+        "links": links,
+    }
+    PEER_LINKS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    PEER_LINKS_FILE.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    return _peer_link_status_text(), links, []
+
+
 def _mcp_config_from_service_links(links: list[dict[str, Any]]) -> dict[str, Any]:
     servers: dict[str, dict[str, str]] = {}
     for idx, item in enumerate(links[:MAX_PEER_LINKS_UI]):
@@ -1172,50 +1280,13 @@ def save_peer_links(
 ):
     state = state or _new_session()
     raw_values = [link_1, link_2, link_3, link_4, link_5]
-    existing_by_url = {
-        str(item.get("url") or ""): item
-        for item in _load_peer_links_for_ui()
-        if str(item.get("url") or "")
-    }
-    links: list[dict[str, Any]] = []
-    errors: list[str] = []
-    for idx, raw in enumerate(raw_values):
-        url = (raw or "").strip()
-        if not url:
-            continue
-        if not url.startswith(("http://", "https://")):
-            errors.append(f"SSE {idx + 1} needs an http:// or https:// URL.")
-            continue
-        existing = existing_by_url.get(url)
-        if existing:
-            peer = dict(existing)
-            peer.setdefault("schema", "champion-continuum/peer-link/v1")
-            peer.setdefault("label", f"SSE {idx + 1}")
-            peer.setdefault("default_slot", PEER_LINK_SLOTS[idx] if idx < len(PEER_LINK_SLOTS) else f"slot_{idx + 1}")
-            peer.setdefault("external_connection_opened", True)
-            peer.setdefault("mcp_url", url)
-            peer["auth_hint"] = peer.get("auth_hint") or "mcp_transport_auth_or_operator_trust_required"
-            peer["url"] = url
-            peer["mcp_url"] = url
-            links.append(peer)
-        else:
-            links.append(_build_peer_link_for_ui(idx, url))
+    status_text, links, errors = _persist_peer_link_values(raw_values)
     if errors:
         try:
             state["trace"].observe("peer_links", "peer link save blocked", {"ok": False, "errors": errors})
         except Exception:
             pass
-        error_text = "Could not save links: " + " ".join(errors)
-        return error_text, state, runtime_settings_markdown(), error_text, []
-
-    payload = {
-        "schema": "champion-continuum/peer-links/v1",
-        "updated_ms": int(time.time() * 1000),
-        "max_links": MAX_PEER_LINKS_UI,
-        "links": links,
-    }
-    PEER_LINKS_FILE.parent.mkdir(parents=True, exist_ok=True)
-    PEER_LINKS_FILE.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        return status_text, state, runtime_settings_markdown(), status_text, []
     try:
         state["trace"].observe(
             "peer_links",
@@ -2207,6 +2278,9 @@ def runtime_settings_state():
         },
         "peer_links": _peer_link_state_for_ui(),
         "providers": provider_registry_state(),
+        "music_forge": music_forge_state(),
+        "expressive_wallpaper": _wallpaper_runtime_state(),
+        "utility_daemons": load_daemon_registry(BRAIN_DIR),
         "faculties": translation_faculty_state(),
         "privacy_defaults": {
             "link_store_raw": os.environ.get("CONTINUUM_LINK_STORE_RAW", "0"),
@@ -2216,7 +2290,7 @@ def runtime_settings_state():
         "operator_rules": [
             "Local start_deck.bat uses CLI-brain mode.",
             "Use model mode only when you intentionally want a resident HF model or provider picker.",
-            "Settings are read-only here; sends, wallets, relays, and pins remain explicit approval paths.",
+            "The App Settings accordion describes the live posture; sends, wallets, relays, and pins remain explicit approval paths.",
         ],
     }
 
@@ -2227,50 +2301,74 @@ def runtime_settings_markdown() -> str:
     peer_links = settings["peer_links"]
     link_service = settings["link_service"]
     mcp_service = settings["mcp_service"]
+    music = settings["music_forge"]
+    wallpaper = settings["expressive_wallpaper"]
+    daemon_registry = settings["utility_daemons"]
     cli_brain = settings["cli_brain"]
     privacy = settings["privacy_defaults"]
     space = settings["space"]
-    auth_line = (
-        "HF login is available in the model controls; provider calls use the signed-in user token first."
-        if not CLI_BRAIN
-        else "Local CLI-brain mode is active; the selected CLI agent is the brain."
-    )
     agents = cli_brain.get("live_agents") or []
     agent_names = ", ".join(str(item.get("agent") or item.get("name") or item) for item in agents) if agents else "none"
+    auth_line = (
+        "HF login is available in the model controls; provider calls use the signed-in user token first."
+        if RUNNING_ON_HF_SPACE and not CLI_BRAIN
+        else "HF login appears on the Space; local provider auth uses HF_TOKEN or HUGGINGFACE_HUB_TOKEN."
+    )
+    if CLI_BRAIN:
+        auth_line = "Local CLI-brain mode is active; the connected CLI agent is the brain."
+    daemons = daemon_registry.get("daemons") or []
+    daemon_names = ", ".join(
+        f"{item.get('agent')}:{item.get('kind')}"
+        for item in daemons
+        if not item.get("stale")
+    ) or "none"
+    daemon_counts = daemon_registry.get("counts") or {}
     return "\n".join(
         [
             "### Continuum Settings",
             "",
-            "**Hugging Face auth**",
+            "**Auth and models**",
             f"- {auth_line}",
             f"- Space secret fallback: {'configured' if space.get('hf_token_present') else 'not configured'}",
             f"- Provider default: `{provider.get('default_provider')}:{provider.get('default_model')}`",
             "",
-            "**MCP/SSE service links**",
-            f"- Saved service slots: {peer_links.get('count', 0)} / {peer_links.get('max_links', MAX_PEER_LINKS_UI)}",
-            "- Use the five boxes below to connect friend, group, work, or local Continuum MCP/SSE services.",
+            "**Utility daemons**",
+            f"- Active sprites: {daemon_counts.get('active', 0)}",
+            f"- Safe for autonomous assignment: {daemon_counts.get('safe_for_autonomous_assignment', 0)}",
+            f"- Live roster: {daemon_names}",
             "",
-            "**Local service endpoints**",
-            f"- Continuum link service: `{link_service.get('url')}`",
-            f"- Link SSE stream: `{link_service.get('sse_all')}`",
-            f"- Continuum MCP/SSE: `{mcp_service.get('sse')}`",
-            f"- Continuum streamable HTTP: `{mcp_service.get('streamable_http')}`",
+            "**Continuum service links**",
+            f"- Saved slots: {peer_links.get('count', 0)} / {peer_links.get('max_links', MAX_PEER_LINKS_UI)}",
+            "- Edit the five MCP/SSE boxes above, then click **Save & Connect Services**.",
             "",
-            "**Runtime mode**",
+            "**Local endpoints**",
+            f"- Link service: `{link_service.get('url')}`",
+            f"- Link stream: `{link_service.get('sse_all')}`",
+            f"- MCP/SSE: `{mcp_service.get('sse')}`",
+            f"- MCP HTTP: `{mcp_service.get('streamable_http')}`",
+            "",
+            "**Music Forge**",
+            f"- Output folder: `{music.get('output_dir')}`",
+            f"- HF Space client: `{'ready' if music.get('gradio_client_available') else 'not available'}`",
+            "- Use normal chat; the council calls Music Forge tools when a song request needs real audio.",
+            "",
+            "**Expressive wallpaper**",
+            f"- Active: `{'yes' if wallpaper.get('active') else 'no'}`",
+            f"- Asset: `{wallpaper.get('asset') or 'none'}`",
+            f"- Council speech rain: `{'ready' if wallpaper.get('speech_rain_ready') else 'unavailable'}`",
+            "- Assistant/council replies can drive glyph rain, color, speed, direction, and intensity from the words themselves.",
+            "",
+            "**Runtime**",
             f"- Mode: `{settings.get('mode')}`",
-            f"- CLI brain enabled: `{cli_brain.get('enabled')}`",
-            f"- Live CLI agents: {agent_names}",
+            f"- CLI brain: `{cli_brain.get('enabled')}`",
+            f"- Live agents: {agent_names}",
             "",
             "**Privacy defaults**",
-            f"- Raw link payload storage: `{privacy.get('link_store_raw')}`",
+            f"- Raw link storage: `{privacy.get('link_store_raw')}`",
             f"- Identifier storage: `{privacy.get('link_store_identifiers')}`",
             f"- Raw content default: `{privacy.get('raw_default')}`",
         ]
     )
-
-
-def settings_refresh_values():
-    return (runtime_settings_markdown(), *_peer_link_values())
 
 
 def _tool_rows(hits: list[dict]) -> list[list[str]]:
@@ -2551,24 +2649,184 @@ CUSTOM_CSS = """
     --cc-accent: #d97706;
 }
 
+#continuum-wallpaper {
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    overflow: hidden;
+    background: #0d0c0b;
+    --cc-wallpaper-opacity: 0.32;
+}
+
+#continuum-wallpaper video,
+#continuum-wallpaper img,
+#continuum-wallpaper iframe {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    opacity: var(--cc-wallpaper-opacity, 0.32);
+    filter: saturate(1.15) contrast(1.05) brightness(0.68);
+    border: 0;
+}
+
+#continuum-wallpaper::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background:
+        linear-gradient(180deg, rgba(13,12,11,0.30), rgba(13,12,11,0.86)),
+        radial-gradient(circle at 74% 18%, rgba(217,119,6,0.10), transparent 34%),
+        radial-gradient(circle at 18% 80%, rgba(34,197,94,0.08), transparent 32%);
+}
+
 html, body, gradio-app {
-    height: 100vh !important;
-    max-height: 100vh !important;
-    overflow: hidden !important;
+    min-height: 100% !important;
+    height: auto !important;
+    max-height: none !important;
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
     background: var(--cc-bg) !important;
 }
 
 .gradio-container {
+    position: relative !important;
+    z-index: 1 !important;
     max-width: none !important;
     width: 100% !important;
-    height: 100vh !important;
-    max-height: 100vh !important;
-    overflow: hidden !important;          /* NO outer scrollbar */
+    min-height: 100vh !important;
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
     display: flex !important;
     flex-direction: column !important;
     margin: 0 !important;
     padding: clamp(8px, 1.1vw, 16px) !important;
-    background: var(--cc-bg) !important;
+    background: transparent !important;
+}
+
+.gradio-container::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    background:
+        linear-gradient(180deg, rgba(13,12,11,0.88), rgba(13,12,11,0.96)),
+        var(--cc-bg);
+}
+
+.cc-forum-roster {
+    display: flex;
+    align-items: center;
+    gap: 0.72rem;
+    padding: 0.62rem 0.72rem;
+    border: 1px solid rgba(217,119,6,0.26);
+    border-radius: 8px;
+    background:
+        linear-gradient(90deg, rgba(217,119,6,0.12), rgba(22,163,74,0.07), rgba(59,130,246,0.07)),
+        rgba(17,16,15,0.82);
+    box-shadow: 0 10px 34px rgba(0,0,0,0.22);
+    backdrop-filter: blur(8px);
+    margin: 0 0 0.65rem;
+}
+
+.cc-forum-roster.empty {
+    border-color: rgba(248,113,113,0.45);
+    background: rgba(127,29,29,0.20);
+    color: #fecaca;
+}
+
+.cc-roster-head {
+    flex: 0 0 auto;
+    display: grid;
+    gap: 0.08rem;
+    min-width: 108px;
+}
+
+.cc-roster-title {
+    color: #fbbf24;
+    font-weight: 800;
+    font-size: 0.78rem;
+    letter-spacing: 0.08em;
+}
+
+.cc-roster-subtitle,
+.cc-roster-empty {
+    color: var(--cc-muted);
+    font-size: 0.76rem;
+}
+
+.cc-roster-chips {
+    display: flex;
+    align-items: stretch;
+    gap: 0.46rem;
+    flex-wrap: wrap;
+}
+
+.cc-mind-chip {
+    --chip-accent: #a8a29e;
+    --chip-bg: rgba(168,162,158,0.10);
+    display: inline-grid;
+    grid-template-columns: 12px minmax(96px, auto) auto;
+    align-items: center;
+    gap: 0.44rem;
+    min-height: 38px;
+    padding: 0.34rem 0.58rem;
+    border-radius: 7px;
+    border: 1px solid color-mix(in srgb, var(--chip-accent) 62%, transparent);
+    background: linear-gradient(180deg, color-mix(in srgb, var(--chip-bg) 72%, transparent), rgba(17,16,15,0.62));
+    color: var(--cc-text);
+}
+
+.cc-mind-chip.provider { --chip-accent: #22d3ee; --chip-bg: rgba(34,211,238,0.14); }
+.cc-mind-chip.engineer { --chip-accent: #f59e0b; --chip-bg: rgba(245,158,11,0.14); }
+.cc-mind-chip.auditor { --chip-accent: #818cf8; --chip-bg: rgba(129,140,248,0.14); }
+.cc-mind-chip.voice { --chip-accent: #fb7185; --chip-bg: rgba(251,113,133,0.14); }
+.cc-mind-chip.stale { --chip-accent: #78716c; --chip-bg: rgba(120,113,108,0.08); opacity: 0.72; }
+.cc-mind-chip.busy { --chip-accent: #a3e635; --chip-bg: rgba(163,230,53,0.14); }
+
+.cc-mind-pulse {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: var(--chip-accent);
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--chip-accent) 52%, transparent);
+}
+
+.cc-mind-chip.fresh .cc-mind-pulse,
+.cc-mind-chip.busy .cc-mind-pulse {
+    animation: cc-pulse 1.9s ease-out infinite;
+}
+
+.cc-mind-main {
+    display: grid;
+    gap: 0.02rem;
+}
+
+.cc-mind-name {
+    color: var(--cc-text);
+    font-weight: 800;
+    font-size: 0.86rem;
+    line-height: 1.05;
+}
+
+.cc-mind-kind {
+    color: var(--chip-accent);
+    font-size: 0.68rem;
+    line-height: 1.1;
+    text-transform: lowercase;
+}
+
+.cc-mind-meta {
+    color: var(--cc-muted);
+    font-size: 0.72rem;
+    white-space: nowrap;
+}
+
+@keyframes cc-pulse {
+    0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--chip-accent) 52%, transparent); }
+    72% { box-shadow: 0 0 0 8px transparent; }
+    100% { box-shadow: 0 0 0 0 transparent; }
 }
 
 /* hard clamp the Plotly inner chart so it can never drive a growth loop */
@@ -2637,9 +2895,9 @@ html, body, gradio-app {
 }
 
 #main-row {
-    flex: 1 1 auto !important;     /* fill leftover space exactly -- no calc guess, no overflow */
+    flex: 1 1 auto !important;
     min-height: 0 !important;
-    overflow: hidden !important;
+    overflow: visible !important;
     gap: 0.75rem !important;
     align-items: stretch !important;
 }
@@ -2717,7 +2975,8 @@ html, body, gradio-app {
 #clear-btn:hover { color: var(--cc-accent); }
 
 #support-tabs {
-    height: 100%;
+    height: auto;
+    max-height: calc(100vh - 232px);
     min-height: 0;
     overflow-y: auto !important;
 }
@@ -2843,6 +3102,103 @@ HERO_HTML = f"""
 </div>
 """
 
+
+BACKGROUND_MEDIA_CANDIDATES = [
+    "continuum_wallpaper.html",
+    "continuum_wallpaper.webm",
+    "continuum_wallpaper.mp4",
+    "continuum_wallpaper.gif",
+    "continuum_wallpaper.png",
+    "continuum_wallpaper.jpg",
+    "continuum_wallpaper.jpeg",
+]
+
+
+def _select_background_media() -> str:
+    configured = os.environ.get("CONTINUUM_BACKGROUND_MEDIA") or os.environ.get("CONTINUUM_WALLPAPER_MEDIA") or ""
+    selected = configured.strip()
+    if selected:
+        return selected
+    asset_dir = Path(__file__).parent / "assets"
+    for name in BACKGROUND_MEDIA_CANDIDATES:
+        candidate = asset_dir / name
+        if candidate.exists():
+            return str(candidate)
+    return ""
+
+
+def _media_src(value: str) -> str:
+    value = str(value or "").strip()
+    if not value:
+        return ""
+    if value.startswith(("http://", "https://", "data:")):
+        return value
+    path = Path(value)
+    if not path.is_absolute():
+        path = Path(__file__).parent / value
+    try:
+        rel = path.resolve().relative_to(Path(__file__).parent.resolve())
+        return "/file=" + str(rel).replace("\\", "/")
+    except Exception:
+        return "/file=" + str(path)
+
+
+def _wallpaper_runtime_state() -> dict[str, Any]:
+    selected = _select_background_media()
+    suffix = Path(selected.split("?", 1)[0]).suffix.lower() if selected else ""
+    return {
+        "schema": "champion-continuum/expressive-wallpaper/v1",
+        "active": bool(selected),
+        "asset": selected,
+        "kind": "web_wallpaper" if suffix in {".html", ".htm"} else ("video" if suffix in {".webm", ".mp4", ".mov", ".m4v"} else ("image" if selected else "none")),
+        "speech_rain_ready": bool(selected and suffix in {".html", ".htm"}),
+        "control_contract": {
+            "type": "continuum:speech-rain",
+            "transport": "postMessage to embedded wallpaper iframe",
+            "inputs": ["assistant_text", "council_text", "daemon_directive"],
+            "outputs": ["glyph_rain", "pattern", "direction", "color", "speed", "intensity"],
+            "mutates_external_state": False,
+        },
+    }
+
+
+def _background_media_html() -> str:
+    selected = _select_background_media()
+    if not selected:
+        return ""
+    src = _media_src(selected)
+    suffix = Path(selected.split("?", 1)[0]).suffix.lower()
+    if suffix in {".webm", ".mp4", ".mov", ".m4v"}:
+        return (
+            "<div id='continuum-wallpaper'>"
+            f"<video src='{html.escape(src)}' autoplay muted loop playsinline></video>"
+            "</div>"
+        )
+    if suffix in {".html", ".htm"}:
+        return (
+            "<div id='continuum-wallpaper'>"
+            f"<iframe src='{html.escape(src)}' title='Continuum wallpaper' aria-hidden='true'></iframe>"
+            "</div>"
+        )
+    return (
+        "<div id='continuum-wallpaper'>"
+        f"<img src='{html.escape(src)}' alt='' aria-hidden='true'>"
+        "</div>"
+    )
+
+
+def _launch_allowed_paths() -> list[str]:
+    allowed = [str(Path(__file__).parent / "assets")]
+    configured = os.environ.get("CONTINUUM_BACKGROUND_MEDIA") or os.environ.get("CONTINUUM_WALLPAPER_MEDIA") or ""
+    if configured and not configured.startswith(("http://", "https://", "data:")):
+        path = Path(configured)
+        if not path.is_absolute():
+            path = Path(__file__).parent / configured
+        parent = str(path.parent)
+        if parent not in allowed:
+            allowed.append(parent)
+    return allowed
+
 # Local deck override: allow ordinary page scroll for the shell, but keep the
 # transcript itself bounded so long forum runs scroll inside the chat panel.
 _CLI_SCROLL_CSS = """
@@ -2873,6 +3229,288 @@ html, body, gradio-app, .gradio-container {
 }
 """
 
+_CONTINUUM_FOOTER_LINK_URL = os.environ.get(
+    "CONTINUUM_LINK_URL",
+    f"http://127.0.0.1:{os.environ.get('CONTINUUM_LINK_PORT', '7871')}",
+)
+_CONTINUUM_FOOTER_MCP_URL = os.environ.get(
+    "CONTINUUM_MCP_URL",
+    f"http://127.0.0.1:{os.environ.get('CONTINUUM_MCP_PORT', '7872')}",
+)
+_CONTINUUM_FOOTER_BOOTSTRAP = json.dumps(
+    {
+        "links": _peer_link_values(),
+        "peer_status": _peer_link_status_text(),
+        "auth": {
+            "mode": "huggingface_space_oauth" if RUNNING_ON_HF_SPACE and not CLI_BRAIN else ("cli_brain" if CLI_BRAIN else "resident_model_or_provider"),
+            "hf_token_present": bool(HF_TOKEN),
+            "login_button_visible": bool(RUNNING_ON_HF_SPACE and not CLI_BRAIN),
+        },
+        "provider": {
+            "default_provider": provider_registry_state()["huggingface_inference_providers"]["default_provider"],
+            "default_model": provider_registry_state()["huggingface_inference_providers"]["default_model"],
+        },
+        "endpoints": {
+            "link_service": _CONTINUUM_FOOTER_LINK_URL,
+            "link_sse": f"{_CONTINUUM_FOOTER_LINK_URL}/sse?slot=*",
+            "mcp_sse": f"{_CONTINUUM_FOOTER_MCP_URL}/mcp/sse",
+            "mcp_http": f"{_CONTINUUM_FOOTER_MCP_URL}/mcp",
+        },
+    },
+    ensure_ascii=False,
+)
+
+CONTINUUM_SETTINGS_HEAD = """
+<script>
+(() => {
+  const sectionId = "continuum-footer-settings";
+  const bootstrap = __CONTINUUM_FOOTER_BOOTSTRAP__;
+  const labels = ["Service 1", "Service 2", "Service 3", "Service 4", "Service 5"];
+  const html = (value) => String(value ?? "").replace(/[&<>"']/g, (ch) => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+  })[ch]);
+
+  function hasSettingsText(node) {
+    const text = node.innerText || node.textContent || "";
+    return text.includes("Display Theme") &&
+      text.includes("Progressive Web App") &&
+      text.includes("Language");
+  }
+
+  function isUsablePanel(node) {
+    if (!node || node === document.body || node.tagName === "GRADIO-APP") return false;
+    const style = window.getComputedStyle(node);
+    if (style.display === "none" || style.visibility === "hidden") return false;
+    const rect = node.getBoundingClientRect();
+    return rect.width > 80 && rect.height > 80;
+  }
+
+  function panelScore(node) {
+    const rect = node.getBoundingClientRect();
+    const textLen = (node.innerText || node.textContent || "").length;
+    return (rect.width * rect.height) + textLen;
+  }
+
+  function settingsPanel() {
+    const direct = Array.from(document.querySelectorAll("dialog,[role='dialog'],section,div"))
+      .filter((node) => hasSettingsText(node) && isUsablePanel(node));
+    if (direct.length) {
+      direct.sort((a, b) => panelScore(a) - panelScore(b));
+      return direct[0];
+    }
+
+    const anchors = Array.from(document.querySelectorAll("h1,h2,h3,h4,label,span,p,div"))
+      .filter((node) => (node.innerText || node.textContent || "").includes("Display Theme"));
+    const candidates = [];
+    for (const anchor of anchors) {
+      let node = anchor;
+      for (let depth = 0; node && depth < 10; depth += 1, node = node.parentElement) {
+        if (hasSettingsText(node) && isUsablePanel(node)) {
+          candidates.push(node);
+          break;
+        }
+      }
+    }
+    candidates.sort((a, b) => panelScore(a) - panelScore(b));
+    return candidates[0] || null;
+  }
+
+  function mainServiceInputs() {
+    const shell = document.querySelector("#peer-link-shell");
+    return shell ? Array.from(shell.querySelectorAll("textarea,input")).slice(0, 5) : [];
+  }
+
+  function readMainValues() {
+    const values = mainServiceInputs().map((input) => input.value || "");
+    const fallback = (bootstrap.links || ["", "", "", "", ""]).slice(0, 5);
+    while (values.length < 5) values.push(fallback[values.length] || "");
+    return values;
+  }
+
+  function setValue(input, value) {
+    const proto = Object.getPrototypeOf(input);
+    const setter = Object.getOwnPropertyDescriptor(proto, "value")?.set;
+    if (setter) setter.call(input, value);
+    else input.value = value;
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+  }
+
+  function clickMainSave() {
+    const shell = document.querySelector("#peer-link-shell");
+    if (!shell) return false;
+    const save = Array.from(shell.querySelectorAll("button"))
+      .find((button) => (button.innerText || "").includes("Save & Connect Services"));
+    if (!save) return false;
+    save.click();
+    return true;
+  }
+
+  function statusGrid(data) {
+    const provider = bootstrap.provider || {};
+    const auth = bootstrap.auth || {};
+    const endpoints = bootstrap.endpoints || {};
+    return `
+      <div class="cc-settings-grid">
+        <div><b>HF auth</b><span>${html(auth.mode || "available")}</span></div>
+        <div><b>Secret fallback</b><span>${auth.hf_token_present ? "configured" : "not configured"}</span></div>
+        <div><b>Provider</b><span>${html(provider.default_provider || "auto")}:${html(provider.default_model || "")}</span></div>
+        <div><b>MCP/SSE</b><span>${html(endpoints.mcp_sse || "")}</span></div>
+      </div>
+    `;
+  }
+
+  function mount(panel) {
+    if (!panel) return;
+    const existing = panel.querySelector("#" + sectionId);
+    if (existing) {
+      draw(existing, readMainValues());
+      return;
+    }
+    const section = document.createElement("div");
+    section.id = sectionId;
+    section.innerHTML = `
+      <style>
+        #${sectionId} { margin-top: 16px; padding-top: 14px; border-top: 1px solid rgba(120,113,108,.35); }
+        #${sectionId} h3 { margin: 0 0 8px; font-size: 1rem; }
+        #${sectionId} p { margin: 0 0 10px; opacity: .78; line-height: 1.35; }
+        #${sectionId} .cc-settings-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 8px 0 12px; }
+        #${sectionId} .cc-settings-grid div { border: 1px solid rgba(120,113,108,.28); border-radius: 7px; padding: 8px; }
+        #${sectionId} .cc-settings-grid b, #${sectionId} label { display: block; font-size: .78rem; opacity: .72; margin-bottom: 4px; }
+        #${sectionId} .cc-settings-grid span { display: block; overflow-wrap: anywhere; font-size: .86rem; }
+        #${sectionId} input { width: 100%; box-sizing: border-box; border-radius: 7px; border: 1px solid rgba(120,113,108,.38); padding: 8px 9px; margin-bottom: 8px; background: rgba(17,16,15,.72); color: inherit; }
+        #${sectionId} .cc-settings-actions { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+        #${sectionId} button { border-radius: 7px; border: 1px solid rgba(217,119,6,.45); background: #d97706; color: white; padding: 8px 10px; cursor: pointer; font-weight: 650; }
+        #${sectionId} .cc-settings-note { font-size: .82rem; opacity: .72; }
+        @media (max-width: 720px) { #${sectionId} .cc-settings-grid { grid-template-columns: 1fr; } }
+      </style>
+      <h3>Continuum Settings</h3>
+      <p>Added to this same Gradio settings menu. The original language, theme, and PWA controls stay above.</p>
+      <div data-role="status">Loading Continuum settings...</div>
+      <div data-role="links"></div>
+      <div class="cc-settings-actions">
+        <button type="button" data-role="save">Save & Connect Services</button>
+        <span class="cc-settings-note" data-role="message"></span>
+      </div>`;
+    panel.appendChild(section);
+
+    const status = section.querySelector("[data-role='status']");
+    const links = section.querySelector("[data-role='links']");
+    const message = section.querySelector("[data-role='message']");
+
+    function localDraw(values) {
+      while (values.length < 5) values.push("");
+      status.innerHTML = statusGrid();
+      links.innerHTML = values.map((value, idx) => `
+        <label>${labels[idx]}</label>
+        <input data-slot="${idx}" type="url" value="${html(value)}"
+          placeholder="${idx === 0 ? "http://127.0.0.1:7872/mcp/sse" : "https://friend.example/mcp/sse"}" />`
+      ).join("");
+      message.textContent = bootstrap.peer_status || "";
+    }
+    function draw(target, values) {
+      const targetStatus = target.querySelector("[data-role='status']");
+      const targetLinks = target.querySelector("[data-role='links']");
+      const targetMessage = target.querySelector("[data-role='message']");
+      if (!targetStatus || !targetLinks || !targetMessage) return;
+      while (values.length < 5) values.push("");
+      targetStatus.innerHTML = statusGrid();
+      targetLinks.innerHTML = values.map((value, idx) => `
+        <label>${labels[idx]}</label>
+        <input data-slot="${idx}" type="url" value="${html(value)}"
+          placeholder="${idx === 0 ? "http://127.0.0.1:7872/mcp/sse" : "https://friend.example/mcp/sse"}" />`
+      ).join("");
+      targetMessage.textContent = bootstrap.peer_status || "";
+    }
+
+    localDraw(readMainValues());
+
+    section.querySelector("[data-role='save']").addEventListener("click", async () => {
+      const values = Array.from(section.querySelectorAll("input[data-slot]"))
+        .sort((a, b) => Number(a.dataset.slot) - Number(b.dataset.slot))
+        .map((input) => input.value.trim());
+      message.textContent = "Saving...";
+      const inputs = mainServiceInputs();
+      inputs.forEach((input, idx) => setValue(input, values[idx] || ""));
+      const connected = clickMainSave();
+      message.textContent = connected ? "Saved and sent to the visible service connector." : "Saved in the menu. Main service boxes were not found on this render.";
+    });
+  }
+
+  function tick() {
+    const panel = settingsPanel();
+    if (panel) mount(panel);
+  }
+
+  window.addEventListener("load", () => {
+    tick();
+    new MutationObserver(tick).observe(document.body, { childList: true, subtree: true });
+    document.addEventListener("click", () => setTimeout(tick, 80), true);
+  });
+})();
+</script>
+""".replace("__CONTINUUM_FOOTER_BOOTSTRAP__", _CONTINUUM_FOOTER_BOOTSTRAP)
+
+CONTINUUM_WALLPAPER_HEAD = """
+<script>
+(() => {
+  function textOf(value) {
+    if (value == null) return "";
+    if (typeof value === "string") return value;
+    if (Array.isArray(value)) return value.map(textOf).filter(Boolean).join("\\n");
+    if (typeof value === "object") {
+      if ("content" in value) return textOf(value.content);
+      if ("text" in value) return textOf(value.text);
+      if ("value" in value) return textOf(value.value);
+    }
+    return String(value || "");
+  }
+
+  function latestAssistantText(history) {
+    if (!Array.isArray(history)) return "";
+    for (let i = history.length - 1; i >= 0; i -= 1) {
+      const row = history[i];
+      if (Array.isArray(row)) {
+        const text = textOf(row[1]).trim();
+        if (text) return text;
+      } else if (row && typeof row === "object") {
+        const role = String(row.role || "").toLowerCase();
+        if (role === "assistant") {
+          const text = textOf(row.content).trim();
+          if (text) return text;
+        }
+      }
+    }
+    return "";
+  }
+
+  function wallpaperFrame() {
+    const shell = document.querySelector("#continuum-wallpaper");
+    return shell ? shell.querySelector("iframe") : null;
+  }
+
+  window.continuumSpeechRain = function(text, source = "council") {
+    const clean = textOf(text).replace(/\\s+/g, " ").trim();
+    if (!clean) return false;
+    const frame = wallpaperFrame();
+    if (!frame || !frame.contentWindow) return false;
+    frame.contentWindow.postMessage({
+      type: "continuum:speech-rain",
+      source,
+      text: clean.slice(0, 2400),
+      ts: Date.now()
+    }, "*");
+    document.documentElement.dataset.continuumSpeechRain = "sent";
+    return true;
+  };
+
+  window.continuumSpeechRainFromHistory = function(history) {
+    return window.continuumSpeechRain(latestAssistantText(history), "chat-history");
+  };
+})();
+</script>
+"""
+
 MODEL_LABEL = "Select an intellect"
 CHATBOT_LABEL = "The Agent's Record"
 INPUT_PLACEHOLDER = "Offer a thought or ask for a recollection..."
@@ -2884,6 +3522,9 @@ MODEL_ERROR_PREFIX = "Intellect failure: "
 
 with gr.Blocks(title=TITLE) as demo:
     session = gr.State()
+    background_media = _background_media_html()
+    if background_media:
+        gr.HTML(background_media)
     if HERO_HTML.strip():
         gr.HTML(HERO_HTML)
 
@@ -2944,6 +3585,10 @@ with gr.Blocks(title=TITLE) as demo:
             peer_save = gr.Button("Save & Connect Services", variant="secondary", scale=1)
             peer_link_status = gr.Markdown(_peer_link_status_text(), elem_id="peer-link-status")
 
+    with gr.Accordion("App Settings", open=False, elem_id="app-settings-panel"):
+        app_settings_summary = gr.Markdown(value=runtime_settings_markdown(), elem_id="app-settings-summary")
+        app_settings_refresh = gr.Button("Refresh Settings", size="sm", variant="secondary")
+
     with gr.Row(elem_id="main-row"):
         # Left: Chat
         with gr.Column(scale=3, elem_id="chat-col"):
@@ -2979,19 +3624,6 @@ with gr.Blocks(title=TITLE) as demo:
                     with gr.Row(elem_id="relay-row"):
                         relay_box = gr.Textbox(label="Relay Command (click row to load)", scale=4, interactive=True)
                         paste_btn = gr.Button("Paste to chat ▸", scale=1)
-                with gr.TabItem("Settings"):
-                    settings_summary = gr.Markdown(value=runtime_settings_markdown(), elem_id="settings-summary")
-                    with gr.Group(elem_id="settings-link-config"):
-                        gr.Markdown("**MCP/SSE service slots**")
-                        with gr.Row():
-                            settings_link_1 = gr.Textbox(label="Service 1", value=peer_link_defaults[0], placeholder="http://127.0.0.1:7872/mcp/sse")
-                            settings_link_2 = gr.Textbox(label="Service 2", value=peer_link_defaults[1], placeholder="https://friend.example/mcp/sse")
-                            settings_link_3 = gr.Textbox(label="Service 3", value=peer_link_defaults[2], placeholder="https://group.example/mcp/sse")
-                            settings_link_4 = gr.Textbox(label="Service 4", value=peer_link_defaults[3], placeholder="https://work.example/mcp/sse")
-                            settings_link_5 = gr.Textbox(label="Service 5", value=peer_link_defaults[4], placeholder="https://overflow.example/mcp/sse")
-                        with gr.Row():
-                            settings_save = gr.Button("Save & Connect Services", variant="secondary")
-                            settings_refresh = gr.Button("Refresh", size="sm")
                 with gr.TabItem("Memory"):
                     mem_refresh = gr.Button("Load / refresh memory", size="sm")
                     mem_status = gr.Markdown(
@@ -3008,42 +3640,41 @@ with gr.Blocks(title=TITLE) as demo:
                     mem_detail = gr.JSON(label="Node informational wealth")
 
     # Wiring
-    send.click(chat, [box, chatbot, model_dd, mcp_url, session], [chatbot, session, box, timeline_plot, sankey_plot, stage]).then(
-        load_trace_table, [session], [mem_table, mem_status])
-    box.submit(chat, [box, chatbot, model_dd, mcp_url, session], [chatbot, session, box, timeline_plot, sankey_plot, stage]).then(
-        load_trace_table, [session], [mem_table, mem_status])
+    send_flow = send.click(chat, [box, chatbot, model_dd, mcp_url, session], [chatbot, session, box, timeline_plot, sankey_plot, stage])
+    send_flow.then(load_trace_table, [session], [mem_table, mem_status]).then(
+        None,
+        chatbot,
+        None,
+        js="(history) => { window.continuumSpeechRainFromHistory?.(history); }",
+    )
+    submit_flow = box.submit(chat, [box, chatbot, model_dd, mcp_url, session], [chatbot, session, box, timeline_plot, sankey_plot, stage])
+    submit_flow.then(load_trace_table, [session], [mem_table, mem_status]).then(
+        None,
+        chatbot,
+        None,
+        js="(history) => { window.continuumSpeechRainFromHistory?.(history); }",
+    )
     clear.click(reset, None, [chatbot, session, box, timeline_plot, sankey_plot, stage])
-    connect_btn.click(
+    connect_flow = connect_btn.click(
         connect_and_explore,
         [mcp_url, model_dd, chatbot, session],
         [mcp_connect_status, tool_status, tool_table, session, chatbot, box, timeline_plot, sankey_plot],
     )
+    connect_flow.then(
+        None,
+        chatbot,
+        None,
+        js="(history) => { window.continuumSpeechRainFromHistory?.(history); }",
+    )
     tool_search.change(browse_tools, [tool_search, session], [tool_status, tool_table])
     tool_table.select(on_select_tool, [tool_table], [relay_box])
     paste_btn.click(_paste_to_chat, [relay_box, box], [box])
-    settings_refresh.click(
-        settings_refresh_values,
-        None,
-        [settings_summary, settings_link_1, settings_link_2, settings_link_3, settings_link_4, settings_link_5],
-    )
     peer_save.click(
         save_peer_links,
         [peer_link_1, peer_link_2, peer_link_3, peer_link_4, peer_link_5, session],
-        [peer_link_status, session, settings_summary, tool_status, tool_table],
-    ).then(
-        _peer_link_values,
-        None,
-        [settings_link_1, settings_link_2, settings_link_3, settings_link_4, settings_link_5],
+        [peer_link_status, session, app_settings_summary, tool_status, tool_table],
     )
-    settings_save.click(
-        save_peer_links,
-        [settings_link_1, settings_link_2, settings_link_3, settings_link_4, settings_link_5, session],
-        [peer_link_status, session, settings_summary, tool_status, tool_table],
-    ).then(
-        _peer_link_values,
-        None,
-        [peer_link_1, peer_link_2, peer_link_3, peer_link_4, peer_link_5],
-    )
+    app_settings_refresh.click(runtime_settings_markdown, None, app_settings_summary)
     mem_refresh.click(load_trace_table, [session], [mem_table, mem_status])
     mem_table.select(inspect_node, [session], [mem_detail])
     graph_size.change(set_graph_height, [graph_size, session], [timeline_plot, sankey_plot])
@@ -3052,5 +3683,11 @@ with gr.Blocks(title=TITLE) as demo:
         js="(v) => { document.querySelectorAll('#timeline-plot, #sankey-plot').forEach(e => e.style.opacity = v); }",
     )
 
+
 if __name__ == "__main__":
-    demo.launch(theme=THEME, css=CUSTOM_CSS + (_CLI_SCROLL_CSS if CLI_BRAIN else ""))
+    demo.launch(
+        theme=THEME,
+        css=CUSTOM_CSS + (_CLI_SCROLL_CSS if CLI_BRAIN else ""),
+        head=CONTINUUM_SETTINGS_HEAD + CONTINUUM_WALLPAPER_HEAD,
+        allowed_paths=_launch_allowed_paths(),
+    )
