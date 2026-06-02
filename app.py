@@ -140,6 +140,7 @@ def _get_tokenizer(model_id: str):
 # - Plain CPU Space (env unset)          -> pass-through, model runs on CPU.
 # - Local PC                              -> pass-through, runs on your local CUDA card
 #                                            (or CPU) per torch.cuda.is_available().
+RUNNING_ON_HF_SPACE = bool(os.environ.get("SPACE_ID") or os.environ.get("SPACE_HOST"))
 USE_ZERO_GPU = bool(os.environ.get("SPACES_ZERO_GPU"))
 
 
@@ -2848,7 +2849,8 @@ with gr.Blocks(title=TITLE) as demo:
                     gr.Markdown("**Brain:** CLI relay — answered live by the agent at the channel.")
                 else:
                     model_dd = gr.Dropdown(choices=MODELS, value=DEFAULT_MODEL, label=MODEL_LABEL, elem_id="model-picker", scale=2)
-                    gr.LoginButton()
+                    if RUNNING_ON_HF_SPACE:
+                        gr.LoginButton()
             mcp_url = gr.Textbox(
                 label="One-off MCP/SSE service URL",
                 placeholder="https://.../mcp/sse",
