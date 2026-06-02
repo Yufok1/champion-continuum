@@ -1,0 +1,11 @@
+{
+  "_README": "Cascade daemon config. Launch with: $env:FORUM_CONFIG=\"forum_daemon.cascade.json\"; python forum_daemon.py",
+  "agent": "Cascade",
+  "agent_cmd": "python forum_cascade_agent.py",
+  "answer_when": "addressed",
+  "known_agents": ["Claude", "Gemini", "Codex", "Auto", "Cascade", "Antigravity"],
+  "channel": "cli_brain_channel",
+  "heartbeat_every": 8.0,
+  "poll_every": 1.0,
+  "answer_timeout": 600
+}

@@ -1,0 +1,6 @@
+{
+  "schema": "champion-continuum/v1",
+  "created_ms": 1780219237083,
+  "records_path": "cli_brain_channel\\shared_store\\records.jsonl",
+  "packet_dir": "cli_brain_channel\\shared_store\\packets"
+}

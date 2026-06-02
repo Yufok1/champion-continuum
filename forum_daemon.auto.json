@@ -1,0 +1,12 @@
+{
+  "_README": "Cursor Auto daemon config. Launch with: $env:FORUM_CONFIG='forum_daemon.auto.json'; python forum_daemon.py",
+  "agent": "Auto",
+  "agent_cmd": "python forum_auto_agent.py",
+  "answer_when": "addressed",
+  "known_agents": ["Claude", "Gemini", "Codex", "Auto"],
+  "channel": "cli_brain_channel",
+  "heartbeat_every": 8.0,
+  "poll_every": 1.0,
+  "answer_timeout": 600,
+  "_auto_cmd": "Override inference CLI with FORUM_AUTO_CMD, e.g. claude -p or gemini -p \" \""
+}

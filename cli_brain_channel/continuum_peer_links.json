@@ -1,0 +1,21 @@
+{
+  "schema": "champion-continuum/peer-links/v1",
+  "updated_ms": 1780354750157,
+  "max_links": 5,
+  "links": [
+    {
+      "schema": "champion-continuum/peer-link/v1",
+      "link_id": "peer_aae8ce16a63e",
+      "label": "SSE 1",
+      "url": "http://127.0.0.1:7893/mcp/sse",
+      "mcp_url": "http://127.0.0.1:7893/mcp/sse",
+      "default_slot": "personal",
+      "auth_hint": "mcp_transport_auth_or_operator_trust_required",
+      "token_present": false,
+      "token_sha256": "",
+      "external_connection_opened": true,
+      "created_by": "main_page",
+      "created_ms": 1780354750157
+    }
+  ]
+}
