@@ -2849,8 +2849,6 @@ with gr.Blocks(title=TITLE) as demo:
                     gr.Markdown("**Brain:** CLI relay — answered live by the agent at the channel.")
                 else:
                     model_dd = gr.Dropdown(choices=MODELS, value=DEFAULT_MODEL, label=MODEL_LABEL, elem_id="model-picker", scale=2)
-                    if RUNNING_ON_HF_SPACE:
-                        gr.LoginButton()
             mcp_url = gr.Textbox(
                 label="One-off MCP/SSE service URL",
                 placeholder="https://.../mcp/sse",
