@@ -5,7 +5,7 @@ colorFrom: yellow
 colorTo: red
 sdk: gradio
 app_file: app.py
-hf_oauth: true
+hf_oauth: false
 pinned: false
 license: mit
 short_description: He doesn't always remember. When he does, it's continuity.
