@@ -1,0 +1,298 @@
+{
+  "resource_id": "gemini_wizard_workbench_dynamic_resource_2026_06_01",
+  "purpose": "Reusable command/data resource for Gemini CLI to continue the local character workbench wizard dance, hair growth/reduction, glyph-chain, audio-reactive, and weather/gravity particle lanes.",
+  "scope": {
+    "authority": "local 127.0.0.1:7866",
+    "actuation_surface": "character workbench",
+    "read_surfaces": [
+      "text_theater_embodiment",
+      "text_theater_view consult/blackboard",
+      "text_theater_snapshot",
+      "supercam"
+    ],
+    "do_not_use": [
+      "generic env_spawn",
+      "generic env_mutate",
+      "environment scene builder object composition unless the operator explicitly changes scope"
+    ]
+  },
+  "command_shape_rule": {
+    "bad": {
+      "command": "workbench_play_authored_clip \"wizard_spell\"",
+      "actor": "Gemini"
+    },
+    "good": {
+      "command": "workbench_play_authored_clip",
+      "target_id": "wizard_spell",
+      "actor": "Gemini"
+    }
+  },
+  "continuity_first": [
+    {
+      "tool": "continuity_status",
+      "args": {
+        "limit": 5
+      }
+    },
+    {
+      "tool": "continuity_restore",
+      "args": {
+        "cwd": "D:\\End-Game\\ended_game",
+        "summary": "Gemini CLI local character workbench wizard dance hair weather audio reacclimation"
+      }
+    },
+    {
+      "tool": "env_help",
+      "args": {
+        "topic": "continuity_reacclimation"
+      }
+    },
+    {
+      "tool": "env_read",
+      "args": {
+        "query": "text_theater_embodiment"
+      }
+    },
+    {
+      "tool": "env_control",
+      "args": {
+        "command": "capture_supercam",
+        "actor": "Gemini"
+      }
+    },
+    {
+      "tool": "env_read",
+      "args": {
+        "query": "text_theater_view",
+        "view": "consult",
+        "section": "blackboard",
+        "diagnostics": true
+      }
+    },
+    {
+      "tool": "env_read",
+      "args": {
+        "query": "text_theater_snapshot"
+      }
+    }
+  ],
+  "latest_codex_receipt": {
+    "captured_on": "2026-06-01",
+    "supercam_file": "D:\\End-Game\\ended_game\\Champion_Council_private\\static\\captures\\supercam_1780339072866.jpg",
+    "mode": "character / builder_subject",
+    "clip": "codex_wizard_shuffle",
+    "timeline": {
+      "duration": 6,
+      "key_pose_count": 4,
+      "displacement_mode": "in_place"
+    },
+    "balance": {
+      "phase": "double_support",
+      "risk": 0,
+      "feet": "both grounded/full/flat/stable"
+    },
+    "hair": {
+      "growth_preset_label": "displaced_mind_follicle_trace",
+      "growth_gain": 0.96,
+      "density_gain": 0.91,
+      "message": "DISPLACEDMINDPERTURBANCEFOLLICLECHAINWIZARDSHUFFLE",
+      "projection": "121 labels / 121 braille labels / applied / projected",
+      "spectrum": "crayolazy",
+      "response": "audio_reactive_saiyan"
+    },
+    "weather": "none at handoff; activate only if operator asks for gravity/weather particles"
+  },
+  "command_blocks": {
+    "reset_default_vitruvian": [
+      {
+        "command": "workbench_new_builder",
+        "target_id": "humanoid_biped",
+        "actor": "Gemini"
+      },
+      {
+        "command": "workbench_set_editing_mode",
+        "target_id": "structure",
+        "actor": "Gemini"
+      },
+      {
+        "command": "workbench_reset_angles",
+        "target_id": "all",
+        "actor": "Gemini"
+      },
+      {
+        "read": "env_read(query='text_theater_snapshot')"
+      }
+    ],
+    "resume_current_clip": [
+      {
+        "command": "workbench_play_authored_clip",
+        "target_id": "codex_wizard_shuffle",
+        "actor": "Gemini"
+      },
+      {
+        "read": "env_read(query='text_theater_snapshot')"
+      }
+    ],
+    "hair_growth_reduction_and_chain": [
+      {
+        "command": "hair_set_granulation",
+        "target_id_json": {
+          "preset": "roots_mullet_lion_mane_beard",
+          "active": true,
+          "growth_gain": 0.96,
+          "strand_density_gain": 0.91,
+          "tuft_density_gain": 0.94,
+          "undulation_gain": 0.93,
+          "color_octave_gain": 1,
+          "expression_coupling_gain": 0.86,
+          "simian_ramp_gain": 0.52,
+          "exhaust_bud_gain": 0.62,
+          "counterweight_gain": 0.48,
+          "impact_resound_gain": 0.78,
+          "ape_scale_gain": 0.22,
+          "ape_scale_factor": 1.18,
+          "max_sample_budget": 240,
+          "preset_label": "displaced_mind_follicle_trace"
+        },
+        "actor": "Gemini"
+      },
+      {
+        "command": "hair_set_glyph_message",
+        "target_id_json": {
+          "active": true,
+          "message_text": "DISPLACEDMINDPERTURBANCEFOLLICLECHAINWIZARDSHUFFLE",
+          "mode": "inertial_word_caterpillar",
+          "phase_rate": 1.72,
+          "repeat_count": 3.6,
+          "slot_phase_stride": 0.73,
+          "sample_phase_stride": 1.19,
+          "tuft_phase_stride": 0.47,
+          "inertia_gain": 0.78,
+          "cohesion_gain": 0.31,
+          "legibility_gain": 0.9,
+          "sharpness_gain": 0.93,
+          "camera_alignment_gain": 0.86,
+          "gravity_bias": 0.64,
+          "turbulence_floor": 0.72,
+          "mutation_gain": 0.97,
+          "perturbance_gain": 0.94,
+          "offset_gain": 0.88,
+          "grid_columns": 13,
+          "grid_rows": 21,
+          "spectrum_mode": "crayolazy",
+          "spectrum_gain": 1,
+          "pop_gain": 0.98,
+          "hue_rate": 0.58,
+          "hue_stride": 0.33,
+          "glow_gain": 0.84,
+          "text_surface": {
+            "active": true,
+            "web_projection_enabled": true,
+            "text_leads_web": true,
+            "authority": "text_theater_primary",
+            "sync_mode": "text_leads_web",
+            "web_projection_mode": "negative_space_braille",
+            "web_projection_budget": 240,
+            "web_projection_sample_stride": 1,
+            "web_projection_granularity": "message_braille_meso",
+            "web_projection_carrier_visibility": "text_only",
+            "equilibrium_font_px": 18,
+            "equilibrium_braille_threshold_px": 10,
+            "equilibrium_focus_window_px": 7,
+            "macro_font_px": 24,
+            "meso_font_px": 17,
+            "micro_font_px": 11,
+            "font_equilibrium_mode": "braille_to_crisp",
+            "allow_braille": true,
+            "allow_glow": true,
+            "allow_sparkle": true,
+            "stationary_glyphs": false
+          }
+        },
+        "actor": "Gemini"
+      },
+      {
+        "command": "pose_drive_set",
+        "target_id_json": {
+          "enabled": true,
+          "mode": "hair_follow_shuffle",
+          "drive_gain": 0.72,
+          "body_motion_gain": 0.58,
+          "cadence_bias": 0.86,
+          "source": "codex_wizard_shuffle_hair_chain"
+        },
+        "actor": "Gemini"
+      }
+    ],
+    "optional_weather_gravity_particle_accent": [
+      {
+        "gate": "Use only after the operator explicitly asks for weather/gravity particles."
+      },
+      {
+        "command": "weather_set_surface",
+        "target_id_json": {
+          "enabled": true,
+          "source": "workbench_dance_weather_resource",
+          "kind": "energy",
+          "flow_class": "gravity_inversion_particle_accent",
+          "density": 0.64,
+          "speed": 0.92,
+          "turbulence": 0.47,
+          "direction": {
+            "x": 0.18,
+            "y": 0.34,
+            "z": -0.92
+          },
+          "drift": {
+            "x": 0.06,
+            "y": 0.18,
+            "z": -0.12
+          },
+          "glyphs": "PHOENIXWINDMANA",
+          "glyph_stride": 4,
+          "render_fidelity": "adaptive",
+          "color_hint": "#facc15",
+          "accent_color_hint": "#60a5fa",
+          "weather_layers": [
+            {
+              "lane_index": 1,
+              "kind": "energy",
+              "flow_class": "everquest_particle_burst",
+              "density": 0.72,
+              "speed": 1.06,
+              "turbulence": 0.58,
+              "glyphs": "MANA",
+              "glyph_stride": 4,
+              "color_hint": "#a78bfa",
+              "accent_color_hint": "#f0abfc"
+            },
+            {
+              "lane_index": 2,
+              "kind": "mist",
+              "flow_class": "gravity_soft_lift",
+              "density": 0.42,
+              "speed": 0.7,
+              "turbulence": 0.25,
+              "glyphs": "LIFT",
+              "glyph_stride": 4,
+              "color_hint": "#67e8f9",
+              "accent_color_hint": "#fde68a"
+            }
+          ]
+        },
+        "actor": "Gemini"
+      },
+      {
+        "command": "weather_clear_surface",
+        "actor": "Gemini",
+        "use_when": "Clear the accent if it drifts, overloads, or the operator wants workbench-only reset."
+      }
+    ]
+  },
+  "receipt_rules": [
+    "Do not claim visible motion until a fresh text_theater_snapshot shows timeline.key_pose_count > 0 and last_action is not Unknown control command.",
+    "Do not claim hair text until hair_text_projection.receipt_status is applied and label_count is nonzero.",
+    "Do not claim audio reactive capture until env_help(topic='audio_reactive_capture_surface') guidance is followed and the snapshot audio_substratum or acoustic feedback says active/marked.",
+    "Do not claim weather/gravity particles until WEATHER is enabled in text_theater_view or text_theater_snapshot and field_disposition reflects the intended medium."
+  ]
+}

@@ -1,0 +1,70 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "champion-continuum"
+version = "0.6.11"
+description = "Portable continuity and reacclimation memory primitive for agent runtimes."
+readme = "README.md"
+requires-python = ">=3.9"
+license = "MIT"
+authors = [
+  { name = "Champion Council" }
+]
+keywords = ["ai", "memory", "continuity", "agents", "tool-less", "relay", "reacclimation"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Developers",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.9",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Software Development :: Libraries :: Python Modules"
+]
+dependencies = [
+  "mcp>=1.2.0",
+  "httpx>=0.27.0",
+]
+
+[project.optional-dependencies]
+deck = [
+  "spaces",
+  "gradio[oauth]",
+  "gradio_client>=1.0.0",
+  "transformers",
+  "accelerate",
+  "torch",
+  "plotly",
+  "cascade-lattice>=0.8.3",
+  "quinesmith>=0.1.1",
+  "dreamer-oracle-gate>=0.1.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/Yufok1/champion-continuum"
+Source = "https://github.com/Yufok1/champion-continuum"
+"Live Demo" = "https://huggingface.co/spaces/tostido/champion-continuum"
+Repository = "https://github.com/Yufok1/champion-continuum"
+
+[project.scripts]
+continuum = "champion_continuum.cli:main"
+champion-continuum = "champion_continuum.cli:main"
+continuum-forum-daemon = "champion_continuum.forum_daemon:main"
+continuum-codex-agent = "champion_continuum.codex_agent:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["champion_continuum*"]
+
+[tool.setuptools.package-data]
+"champion_continuum.deck" = [
+  "*.bat",
+  "*.ps1",
+  "*.json",
+  "*.md",
+  "*.txt",
+  "*.html",
+  "assets/*",
+]

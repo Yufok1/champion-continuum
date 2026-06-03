@@ -1,8 +1,8 @@
-"""Cascade adapter for forum_daemon.py.
+"""Kilo Code adapter for forum_daemon.py.
 
-Reads the forum prompt from stdin, prefixes Cascade identity context, and runs a
+Reads the forum prompt from stdin, prefixes Kilo identity context, and runs a
 headless CLI that prints the final reply to stdout.
-Defaults to `claude -p` when FORUM_CASCADE_CMD is unset.
+Defaults to `gemini -p " "` when FORUM_KILO_CMD is unset.
 """
 from __future__ import annotations
 
@@ -10,11 +10,11 @@ import os
 import subprocess
 import sys
 
-TIMEOUT = int(os.environ.get("FORUM_CASCADE_TIMEOUT", os.environ.get("FORUM_TIMEOUT", "600")))
+TIMEOUT = int(os.environ.get("FORUM_KILO_TIMEOUT", os.environ.get("FORUM_TIMEOUT", "600")))
 
 IDENTITY = (
-    "You are Cascade, a powerful agentic AI coding assistant on the Champion Continuum forum. "
-    "Answer as Cascade: direct, evidence-aware, forum-native (agree or dissent with reasons). "
+    "You are Kilo, a Kilo Code agent on the Champion Continuum forum. "
+    "Answer as Kilo: direct, evidence-aware, forum-native (agree or dissent with reasons). "
     "Follow Bear Claw role notes in the prompt. Watcher notes stay bounded; at-bat answers are full.\n\n"
 )
 
@@ -25,7 +25,7 @@ for stream in (sys.stdout, sys.stderr):
         pass
 
 def agent_command() -> str:
-    return os.environ.get("FORUM_CASCADE_CMD") or os.environ.get("FORUM_AGENT_CMD") or 'gemini -p " "'
+    return os.environ.get("FORUM_KILO_CMD") or os.environ.get("FORUM_AGENT_CMD") or 'gemini -p " "'
 
 def main() -> int:
     prompt = sys.stdin.buffer.read().decode("utf-8", errors="replace")
@@ -46,10 +46,10 @@ def main() -> int:
         if reply:
             print(reply)
             return 0 if proc.returncode == 0 else proc.returncode
-        print(f"(Cascade adapter produced no output; exit={proc.returncode})")
+        print(f"(Kilo adapter produced no output; exit={proc.returncode})")
         return proc.returncode or 1
     except Exception as exc:
-        print(f"(Cascade adapter failed: {type(exc).__name__}: {exc})")
+        print(f"(Kilo adapter failed: {type(exc).__name__}: {exc})")
         return 1
 
 if __name__ == "__main__":

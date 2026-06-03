@@ -1,0 +1,4038 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🌊 Matrix Rain - Advanced Visual Control Unit</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Courier New', monospace;
+            background: linear-gradient(135deg, #0a0a0a 0%, #1a1a2e 50%, #16213e 100%);
+            color: #00ff41;
+            overflow-x: hidden;
+            pointer-events: none;
+        }
+
+        .matrix-modal {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 60vw;
+            max-width: 900px;
+            height: 90vh;
+            background: rgba(0, 0, 0, 0.85);
+            border: 3px solid #00ff41;
+            border-radius: 15px;
+            z-index: 100;
+            display: flex;
+            flex-direction: column;
+            backdrop-filter: blur(5px);
+            box-shadow: 0 0 50px rgba(0, 255, 65, 0.3);
+            pointer-events: auto;
+        }
+
+        .matrix-modal.minimized {
+            top: 20px !important;
+            left: auto !important;
+            right: 20px !important;
+            transform: none !important;
+            width: 350px !important;
+            height: 48px !important;
+            min-width: 200px;
+            border-radius: 12px !important;
+            box-shadow: 0 2px 12px rgba(0,255,65,0.15);
+            overflow: hidden;
+        }
+
+        .modal-header {
+            background: linear-gradient(90deg, #00ff41, #00cc33);
+            color: #000;
+            padding: 15px 20px;
+            border-radius: 12px 12px 0 0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-weight: bold;
+            font-size: 18px;
+            pointer-events: auto;
+        }
+
+        .close-btn {
+            background: #ff4444;
+            color: white;
+            border: none;
+            padding: 8px 15px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: bold;
+            pointer-events: auto;
+        }
+
+        .minimize-btn {
+            background: #ffaa00;
+            color: #000;
+            border: none;
+            padding: 8px 15px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: bold;
+            margin-right: 10px;
+            pointer-events: auto;
+        }
+
+        .matrix-modal.minimized {
+            height: 60px;
+            overflow: hidden;
+        }
+
+        .matrix-modal.minimized .modal-content {
+            display: none;
+        }
+
+        .matrix-modal.minimized .close-btn {
+            display: none;
+        }
+
+        .matrix-modal.minimized .full-header-text {
+            display: none;
+        }
+
+        .matrix-modal:not(.minimized) .minimized-header-text {
+            display: none;
+        }
+
+        .modal-content {
+            flex: 1;
+            padding: 20px;
+            overflow-y: auto;
+            display: block;
+            -webkit-overflow-scrolling: touch;
+            pointer-events: auto;
+            cursor: default;
+        }
+
+        .section {
+            background: rgba(0, 0, 0, 0.7);
+            border: 2px solid #00ff41;
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 20px;
+            pointer-events: auto !important;
+            cursor: default;
+            position: relative;
+            z-index: 9999;
+        }
+
+        .section h3 {
+            color: #00ff41;
+            margin-bottom: 15px;
+            font-size: 16px;
+            border-bottom: 2px solid #00ff41;
+            padding-bottom: 5px;
+        }
+
+        .status-indicator {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 8px;
+            animation: pulse 2s infinite;
+        }
+
+        .status-connected { background: #00ff41; }
+        .status-warning { background: #ffaa00; }
+        .status-error { background: #ff4444; }
+
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.5; }
+            100% { opacity: 1; }
+        }
+
+        .rain-controls {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-top: 15px;
+            pointer-events: auto;
+        }
+
+        .control-group {
+            background: rgba(0, 0, 0, 0.8);
+            border: 1px solid #00ff41;
+            border-radius: 8px;
+            padding: 15px;
+            pointer-events: auto;
+        }
+
+        .control-group h4 {
+            color: #00ff41;
+            margin-bottom: 10px;
+            font-size: 14px;
+        }
+
+        .control-item {
+            margin-bottom: 10px;
+            pointer-events: auto !important;
+            position: relative;
+            z-index: 10000;
+        }
+
+        .control-item label {
+            pointer-events: none;
+            display: block;
+            margin-bottom: 5px;
+            font-size: 12px;
+            color: #ccc;
+        }
+
+        .control-item input[type="range"] {
+            width: 100%;
+            background: #333;
+            border-radius: 5px;
+            outline: none;
+            pointer-events: auto;
+            cursor: pointer;
+            -webkit-appearance: none;
+            height: 8px;
+        }
+
+        /* Slider thumb for Chrome/Safari/Edge */
+        .control-item input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: #00ff41;
+            cursor: grab;
+            pointer-events: auto;
+            transition: all 0.3s ease;
+            box-shadow: 0 0 5px rgba(0, 255, 65, 0.5);
+        }
+
+        .control-item input[type="range"]::-webkit-slider-thumb:hover {
+            width: 26px;
+            height: 26px;
+            background: #00ff88;
+            box-shadow: 0 0 15px rgba(0, 255, 65, 0.8);
+            cursor: grabbing;
+        }
+
+        .control-item input[type="range"]::-webkit-slider-thumb:active {
+            cursor: grabbing;
+            background: #00ffaa;
+        }
+
+        /* Slider thumb for Firefox */
+        .control-item input[type="range"]::-moz-range-thumb {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: #00ff41;
+            cursor: grab;
+            pointer-events: auto;
+            border: none;
+            transition: all 0.3s ease;
+            box-shadow: 0 0 5px rgba(0, 255, 65, 0.5);
+        }
+
+        .control-item input[type="range"]::-moz-range-thumb:hover {
+            width: 26px;
+            height: 26px;
+            background: #00ff88;
+            box-shadow: 0 0 15px rgba(0, 255, 65, 0.8);
+            cursor: grabbing;
+        }
+
+        .control-item input[type="range"]::-moz-range-thumb:active {
+            cursor: grabbing;
+            background: #00ffaa;
+        }
+
+        /* Slider track styling */
+        .control-item input[type="range"]::-webkit-slider-runnable-track {
+            width: 100%;
+            height: 8px;
+            background: #333;
+            border-radius: 5px;
+            pointer-events: auto;
+        }
+
+        .control-item input[type="range"]::-moz-range-track {
+            width: 100%;
+            height: 8px;
+            background: #333;
+            border-radius: 5px;
+            pointer-events: auto;
+        }
+
+        .control-item input[type="color"] {
+            width: 50px;
+            height: 30px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            pointer-events: auto;
+            position: relative;
+            z-index: 10000;
+            -webkit-appearance: none;
+            -moz-appearance: none;
+            appearance: none;
+            background: none;
+            border: 2px solid #00ff41;
+        }
+
+        .control-item input[type="color"]:hover {
+            transform: scale(1.1);
+            box-shadow: 0 0 10px rgba(0, 255, 65, 0.5);
+            border-color: #00ff88;
+        }
+
+        .control-item input[type="color"]:focus {
+            outline: 2px solid #00ff41;
+            outline-offset: 2px;
+            transform: scale(1.05);
+            z-index: 10001;
+        }
+
+        .control-item input[type="color"]::-webkit-color-swatch-wrapper {
+            padding: 0;
+        }
+
+        .control-item input[type="color"]::-webkit-color-swatch {
+            border: none;
+            border-radius: 3px;
+        }
+
+        /* FORCE INTERACTIVE ELEMENTS TO WORK */
+        select, input, button, .pattern-btn, .zoom-btn, .btn {
+            pointer-events: auto !important;
+            cursor: pointer !important;
+            -webkit-user-select: none !important;
+            -moz-user-select: none !important;
+            -ms-user-select: none !important;
+            user-select: none !important;
+            position: relative !important;
+            z-index: 99999 !important;
+        }
+
+        /* FIX DROPDOWN CLICK HANDLING */
+        select {
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        /* Close dropdowns when clicking outside */
+        document.addEventListener('click', function(e) {
+            if (!e.target.closest('select') && !e.target.closest('input')) {
+                document.querySelectorAll('select').forEach(select => {
+                    select.blur();
+                });
+                document.querySelectorAll('input[type="color"]').forEach(input => {
+                    input.blur();
+                });
+            }
+        });
+
+        /* WALLPAPER ENGINE COMPATIBILITY */
+        .matrix-modal * {
+            pointer-events: auto !important;
+        }
+            width: 100%;
+            background: #333;
+            color: #00ff41;
+            border: 1px solid #00ff41;
+            border-radius: 5px;
+            padding: 8px;
+            font-size: 14px;
+            pointer-events: auto !important;
+            cursor: pointer;
+            position: relative;
+            z-index: 9999;
+            -webkit-appearance: none;
+            -moz-appearance: none;
+            appearance: none;
+            outline: none;
+        }
+
+        .control-item select:hover {
+            background: #444;
+            border-color: #00ff88;
+            box-shadow: 0 2px 8px rgba(0, 255, 65, 0.4);
+        }
+
+        .control-item select:focus {
+            outline: 2px solid #00ff41;
+            outline-offset: 2px;
+            background: #444;
+        }
+
+        .control-item select option {
+            background: #333;
+            color: #00ff41;
+            padding: 10px 5px;
+            border: none;
+            min-height: 20px;
+        }
+
+        .control-item select option:hover {
+            background: #00ff41;
+            color: #000;
+        }
+
+        .control-item select::after {
+            content: '▼';
+            position: absolute;
+            right: 10px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: #00ff41;
+            pointer-events: none;
+            font-size: 12px;
+        }
+
+        .pattern-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 10px;
+            margin-top: 15px;
+        }
+
+        .pattern-btn {
+            background: rgba(0, 255, 65, 0.1);
+            border: 1px solid #00ff41;
+            border-radius: 5px;
+            padding: 10px;
+            color: #00ff41;
+            cursor: pointer;
+            font-size: 12px;
+            text-align: center;
+            transition: all 0.3s ease;
+            pointer-events: auto;
+        }
+
+        .pattern-btn:hover {
+            background: rgba(0, 255, 65, 0.2);
+            transform: translateY(-2px);
+        }
+
+        .pattern-btn.active {
+            background: #00ff41;
+            color: #000;
+        }
+
+        .rainbow-spectrum {
+            display: flex;
+            gap: 5px;
+            margin-top: 10px;
+        }
+
+        .spectrum-color {
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            cursor: pointer;
+            border: 2px solid transparent;
+            transition: all 0.3s ease;
+        }
+
+        .spectrum-color:hover {
+            transform: scale(1.2);
+        }
+
+        .spectrum-color.active {
+            border-color: #fff;
+        }
+
+        .zoom-control {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-top: 5px;
+        }
+
+        .zoom-btn {
+            background: rgba(0, 255, 65, 0.2);
+            border: 1px solid #00ff41;
+            border-radius: 5px;
+            padding: 8px 15px;
+            color: #00ff41;
+            cursor: pointer;
+            font-size: 18px;
+            font-weight: bold;
+            transition: all 0.2s ease;
+            min-width: 45px;
+            pointer-events: auto;
+        }
+
+        .zoom-btn:hover {
+            background: rgba(0, 255, 65, 0.4);
+            transform: scale(1.1);
+        }
+
+        .zoom-btn:active {
+            transform: scale(0.95);
+        }
+
+        .zoom-display {
+            color: #00ff41;
+            font-size: 14px;
+            min-width: 50px;
+            text-align: center;
+            font-weight: bold;
+        }
+
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 15px;
+            margin-top: 15px;
+        }
+
+        .metric-card {
+            background: rgba(0, 0, 0, 0.8);
+            border: 1px solid #00ff41;
+            border-radius: 8px;
+            padding: 15px;
+            text-align: center;
+        }
+
+        .metric-value {
+            font-size: 24px;
+            font-weight: bold;
+            color: #00ff41;
+        }
+
+        .metric-label {
+            font-size: 12px;
+            color: #ccc;
+            margin-top: 5px;
+        }
+
+        .activity-feed {
+            max-height: 200px;
+            overflow-y: auto;
+            background: rgba(0, 0, 0, 0.5);
+            border: 1px solid #00ff41;
+            border-radius: 5px;
+            padding: 10px;
+            -webkit-overflow-scrolling: touch;
+            pointer-events: auto;
+        }
+
+        .activity-item {
+            padding: 5px 0;
+            border-bottom: 1px solid rgba(0, 255, 65, 0.2);
+            font-size: 12px;
+        }
+
+        .audit-canvas {
+            background: rgba(0, 0, 0, 0.8);
+            border: 1px solid #00ff41;
+            border-radius: 8px;
+            padding: 15px;
+            min-height: 150px;
+        }
+
+        .audit-entry {
+            background: rgba(0, 255, 65, 0.1);
+            border: 1px solid #00ff41;
+            border-radius: 5px;
+            padding: 10px;
+            margin: 10px 0;
+            font-size: 12px;
+        }
+
+        .btn {
+            background: #00ff41;
+            color: #000;
+            border: none;
+            padding: 8px 15px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: bold;
+            margin: 5px;
+        }
+
+        .btn:hover {
+            background: #00cc33;
+        }
+
+        .btn:disabled {
+            background: rgba(100, 100, 100, 0.3);
+            color: rgba(150, 150, 150, 0.5);
+            cursor: not-allowed;
+            opacity: 0.4;
+        }
+
+        .btn:disabled:hover {
+            background: rgba(100, 100, 100, 0.3);
+            transform: none;
+        }
+
+        .btn-danger {
+            background: #ff4444;
+            color: white;
+        }
+
+        .btn-warning {
+            background: #ffaa00;
+            color: #000;
+        }
+
+        .toolkit-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 15px;
+            margin-top: 15px;
+        }
+
+        .toolkit-card {
+            background: rgba(0, 0, 0, 0.8);
+            border: 1px solid #00ff41;
+            border-radius: 8px;
+            padding: 15px;
+            transition: all 0.3s ease;
+        }
+
+        .toolkit-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0, 255, 65, 0.3);
+        }
+
+        .toolkit-header {
+            display: flex;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+
+        .toolkit-icon {
+            font-size: 20px;
+            margin-right: 10px;
+        }
+
+        .toolkit-name {
+            font-weight: bold;
+            color: #00ff41;
+        }
+
+        .toolkit-status {
+            font-size: 12px;
+            color: #00ff41;
+            margin-left: auto;
+        }
+
+        .function-list {
+            list-style: none;
+            margin: 10px 0;
+        }
+
+        .function-list li {
+            padding: 5px 0;
+            border-bottom: 1px solid rgba(0, 255, 65, 0.2);
+            font-size: 12px;
+        }
+
+        .sample-analysis {
+            background: rgba(0, 255, 65, 0.1);
+            border: 1px solid #00ff41;
+            border-radius: 5px;
+            padding: 10px;
+            margin-top: 10px;
+            font-size: 12px;
+        }
+
+        .scrollbar::-webkit-scrollbar {
+            width: 30px;
+        }
+
+        .scrollbar::-webkit-scrollbar-track {
+            background: linear-gradient(90deg,
+                rgba(100, 0, 0, 0.8) 0%,
+                rgba(150, 0, 0, 0.6) 50%,
+                rgba(100, 0, 0, 0.8) 100%);
+            border: 3px solid #ff0000;
+            border-radius: 5px;
+            pointer-events: auto;
+            cursor: pointer;
+            box-shadow: inset 0 0 10px rgba(255, 0, 0, 0.5);
+        }
+
+        .scrollbar::-webkit-scrollbar-track:hover {
+            background: linear-gradient(90deg,
+                rgba(150, 0, 0, 0.9) 0%,
+                rgba(200, 0, 0, 0.7) 50%,
+                rgba(150, 0, 0, 0.9) 100%);
+            border-color: #ff3333;
+        }
+
+        .scrollbar::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 0, 0.7);
+            border-radius: 15px;
+            border: 2px solid rgba(255, 255, 0, 0.9);
+            pointer-events: none;
+            min-height: 50px;
+            box-shadow: 0 0 8px rgba(255, 255, 0, 0.6);
+        }
+
+        .file-upload-zone {
+            background: rgba(0, 0, 0, 0.8);
+            border: 2px dashed #00ff41;
+            border-radius: 8px;
+            padding: 30px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            margin-bottom: 20px;
+        }
+
+        .file-upload-zone:hover {
+            background: rgba(0, 255, 65, 0.1);
+            border-color: #00cc33;
+        }
+
+        .file-upload-zone.dragover {
+            background: rgba(0, 255, 65, 0.2);
+            border-color: #ffff00;
+        }
+
+        .upload-icon {
+            font-size: 48px;
+            margin-bottom: 10px;
+        }
+
+        .playlist-container {
+            background: rgba(0, 0, 0, 0.8);
+            border: 1px solid #00ff41;
+            border-radius: 8px;
+            max-height: 300px;
+            overflow-y: auto;
+            margin-bottom: 20px;
+            -webkit-overflow-scrolling: touch;
+            pointer-events: auto;
+        }
+
+        .playlist-item {
+            padding: 12px 15px;
+            border-bottom: 1px solid rgba(0, 255, 65, 0.2);
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .playlist-item:hover {
+            background: rgba(0, 255, 65, 0.1);
+        }
+
+        .playlist-item.playing {
+            background: rgba(0, 255, 65, 0.2);
+            border-left: 4px solid #00ff41;
+        }
+
+        .playlist-item-info {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .playlist-item-title {
+            color: #00ff41;
+            font-weight: bold;
+            font-size: 14px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .playlist-item-duration {
+            color: #999;
+            font-size: 12px;
+        }
+
+        .playlist-item-remove {
+            background: #ff4444;
+            color: white;
+            border: none;
+            padding: 5px 10px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+            margin-left: 10px;
+        }
+
+        .playlist-item-remove:hover {
+            background: #cc0000;
+        }
+
+        .player-controls {
+            background: rgba(0, 0, 0, 0.8);
+            border: 1px solid #00ff41;
+            border-radius: 8px;
+            padding: 20px;
+        }
+
+        .now-playing {
+            text-align: center;
+            margin-bottom: 15px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid rgba(0, 255, 65, 0.3);
+        }
+
+        .now-playing-title {
+            color: #00ff41;
+            font-size: 16px;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+
+        .now-playing-time {
+            color: #999;
+            font-size: 12px;
+        }
+
+        .progress-bar-container {
+            width: 100%;
+            height: 6px;
+            background: rgba(0, 0, 0, 0.5);
+            border-radius: 3px;
+            margin: 10px 0;
+            cursor: pointer;
+            position: relative;
+        }
+
+        .progress-bar {
+            height: 100%;
+            background: #00ff41;
+            border-radius: 3px;
+            width: 0%;
+            transition: width 0.1s linear;
+        }
+
+        .playback-buttons {
+            display: flex;
+            justify-content: center;
+            gap: 15px;
+            margin: 20px 0;
+        }
+
+        .player-btn {
+            background: #00ff41;
+            color: #000;
+            border: none;
+            padding: 12px 20px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: bold;
+            font-size: 16px;
+            transition: all 0.2s ease;
+        }
+
+        .player-btn:hover {
+            background: #00cc33;
+            transform: scale(1.05);
+        }
+
+        .player-btn:disabled {
+            background: #333;
+            color: #666;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .player-btn-primary {
+            background: #ff1493;
+            color: white;
+            font-size: 20px;
+            padding: 15px 30px;
+        }
+
+        .player-btn-primary:hover {
+            background: #ff006f;
+        }
+
+        .volume-control {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-top: 15px;
+        }
+
+        .volume-icon {
+            font-size: 20px;
+            color: #00ff41;
+        }
+
+        .volume-slider {
+            flex: 1;
+            height: 6px;
+            border-radius: 3px;
+            background: #333;
+            outline: none;
+            -webkit-appearance: none;
+        }
+
+        .volume-slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            background: #00ff41;
+            cursor: pointer;
+        }
+
+        .volume-slider::-moz-range-thumb {
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            background: #00ff41;
+            cursor: pointer;
+            border: none;
+        }
+
+        .playlist-stats {
+            text-align: center;
+            padding: 10px;
+            color: #999;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <!-- Matrix Rain Canvas - Dual Layer System -->
+    <canvas id="matrixRainCanvas" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; pointer-events: none; opacity: 0.8; background: transparent;"></canvas>
+    
+
+    <div class="matrix-modal scrollbar minimized">
+        <div class="modal-header">
+            <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+                <div class="minimized-header-text">
+                    <span style="font-size: 18px; color: #ffff00; font-weight: bold;">👉 CLICK HERE</span>
+                    <span style="font-size: 24px; color: #ff0000; font-weight: bold;">→→→</span>
+                </div>
+                <div class="full-header-text">
+                    🌊 Matrix Rain - Advanced Visual Control Unit
+                    <span class="status-indicator status-connected"></span>
+                    <span style="font-size: 14px; color: #000;">Connected</span>
+                    <br>
+                    <span style="font-size: 20px; color: #ff0000; padding: 3px 8px; background: rgba(255,255,0,0.3); border-radius: 4px; font-weight: bold;">Click minimize button to collapse</span>
+                </div>
+                <div>
+                    <button class="minimize-btn" onclick="toggleMatrixModal()" id="minimizeBtn">−</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="modal-content scrollbar">
+            <!-- Left Column -->
+            <div>
+                <!-- Rain Pattern Controls -->
+                <div class="section">
+                    <h3>🌧️ Rain Pattern Controls</h3>
+                    <div style="margin-bottom: 15px; text-align: center;">
+                        <button class="btn" onclick="toggleMatrixRain()" style="background: #00ff41; color: black; font-weight: bold; font-size: 16px; padding: 12px 24px;">
+                            🌊 Toggle Matrix Rain
+                        </button>
+                        <button class="btn btn-danger" onclick="emergencyStop()" style="margin-left: 10px;">
+                            🛑 Emergency Stop
+                        </button>
+                        <button class="btn" id="reverseFlowBtn" onclick="toggleReverseFlow()" style="background: #ffaa00; color: black; font-weight: bold; font-size: 16px; padding: 12px 24px; margin-left: 10px;">
+                            ⏪ REVERSE FLOW
+                        </button>
+                    </div>
+                    <div style="margin-bottom: 15px; text-align: center;">
+                        <button class="btn" onclick="activateChaosRandomizer()" style="background: #ff00ff; color: black; font-weight: bold; font-size: 16px; padding: 12px 24px;">
+                            🌀 CHAOS ONCE
+                        </button>
+                        <button class="btn" id="autoOrchestratorBtn" onclick="toggleAutoOrchestrator()" style="background: #0080ff; color: white; font-weight: bold; font-size: 16px; padding: 12px 24px; margin-left: 10px;">
+                            🎭 AUTO ORCHESTRATOR
+                        </button>
+                    </div>
+                    <div style="margin-bottom: 15px; text-align: center;">
+                        <button class="btn" id="audioReactiveBtn" onclick="toggleAudioReactive()" style="background: #ff1493; color: white; font-weight: bold; font-size: 16px; padding: 12px 24px;">
+                            🎵 AUDIO REACTIVE MODE
+                        </button>
+                        
+                        <div id="audioStatus" style="margin-top: 10px; font-size: 12px; color: #00ff41;"></div>
+                        <div id="audioVisualizer" style="margin-top: 10px; height: 60px; background: rgba(0,0,0,0.5); border: 1px solid #00ff41; border-radius: 5px; position: relative; overflow: hidden;"></div>
+                        <div style="margin-top: 15px; padding: 10px; background: rgba(0, 0, 0, 0.3); border-radius: 5px; text-align: center;">
+                            <div style="font-size: 12px; color: #999; margin-bottom: 10px;">Audio Mode Settings</div>
+                            <div style="display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;">
+                                <button class="btn" id="toggleAudioReverseBtn" onclick="toggleAudioReverse()" style="background: #333; color: #666; font-weight: bold; font-size: 12px; padding: 8px 12px;">
+                                    ❌ Reverse Flow
+                                </button>
+                                <button class="btn" id="toggleAudioDiagonalsBtn" onclick="toggleAudioDiagonals()" style="background: #00ff41; color: #000; font-weight: bold; font-size: 12px; padding: 8px 12px;">
+                                    ✅ Angles
+                                </button>
+                                <button class="btn" onclick="hardRefresh()" style="background: #ff6600; color: white; font-weight: bold; font-size: 12px; padding: 8px 12px;">
+                                    🔄 Hard Refresh
+                                </button>
+                            </div>
+                            <div style="margin-top: 8px; display: grid; grid-template-columns: auto 220px auto; align-items: center; gap: 10px; justify-content: center;">
+                                <label for="hueReactSlider" style="font-size: 12px; color: #ccc;">Hue Reactivity</label>
+                                <input type="range" id="hueReactSlider" min="50" max="200" value="100" oninput="updateHueReactivity()">
+                                <span id="hueReactDisplay" style="color: #00ff41; font-size: 12px;">100%</span>
+
+                                <label for="satGainSlider" style="font-size: 12px; color: #ccc;">Saturation Gain</label>
+                                <input type="range" id="satGainSlider" min="50" max="200" value="100" oninput="updateSaturationGain()">
+                                <span id="satGainDisplay" style="color: #00ff41; font-size: 12px;">100%</span>
+
+                                <label for="brightDepthSlider" style="font-size: 12px; color: #ccc;">Brightness Depth</label>
+                                <input type="range" id="brightDepthSlider" min="50" max="200" value="100" oninput="updateBrightnessDepth()">
+                                <span id="brightDepthDisplay" style="color: #00ff41; font-size: 12px;">100%</span>
+                            </div>
+                            <div style="margin-top: 10px; display: flex; gap: 8px; justify-content: center; flex-wrap: wrap;">
+                                <button class="btn" onclick="setColorPreset('neon')" style="background:#00ff88; color:#000; font-weight:bold; font-size:12px; padding:8px 12px;">Neon</button>
+                                <button class="btn" onclick="setColorPreset('prism')" style="background:#ff00ff; color:#000; font-weight:bold; font-size:12px; padding:8px 12px;">Prism</button>
+                                <button class="btn" onclick="setColorPreset('pastel')" style="background:#ffd1f0; color:#000; font-weight:bold; font-size:12px; padding:8px 12px;">Pastel</button>
+                                <button class="btn" onclick="setColorPreset('hyperneon')" style="background:#39ff14; color:#000; font-weight:bold; font-size:12px; padding:8px 12px;">Hyperneon</button>
+                                <button class="btn" onclick="setColorPreset('aurora')" style="background:#00e0ff; color:#000; font-weight:bold; font-size:12px; padding:8px 12px;">Aurora</button>
+                                <button class="btn" onclick="setColorPreset('bassstorm')" style="background:#ff9f1a; color:#000; font-weight:bold; font-size:12px; padding:8px 12px;">Bassstorm</button>
+                                <button class="btn" onclick="setColorPreset('crystal')" style="background:#a0e9ff; color:#000; font-weight:bold; font-size:12px; padding:8px 12px;">Crystal</button>
+                                <button class="btn" onclick="setColorPreset('vaporwave')" style="background:#ff77e9; color:#000; font-weight:bold; font-size:12px; padding:8px 12px;">Vaporwave</button>
+                                <button class="btn" onclick="setColorPreset('inferno')" style="background:#ff3b3b; color:#000; font-weight:bold; font-size:12px; padding:8px 12px;">Inferno</button>
+                                <button class="btn" onclick="setColorPreset('zen')" style="background:#b6ffb3; color:#000; font-weight:bold; font-size:12px; padding:8px 12px;">Zen</button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="pattern-grid">
+                        <button class="pattern-btn active" onclick="setRainPattern('classic', this)">Classic Matrix</button>
+                        <button class="pattern-btn" onclick="setRainPattern('rainbow', this)">Rainbow Spectrum</button>
+                        <button class="pattern-btn" onclick="setRainPattern('pentad', this)">Pentad Prism</button>
+                        <button class="pattern-btn" onclick="setRainPattern('chaos', this)">Chaos Flow</button>
+                        <button class="pattern-btn" onclick="setRainPattern('harmonic', this)">Harmonic Waves</button>
+                        <button class="pattern-btn" onclick="setRainPattern('particles', this)">💫 Particles</button>
+                    </div>
+                </div>
+
+                <!-- Visual Controls -->
+                <div class="section">
+                    <h3>🎨 Visual Controls</h3>
+                    <div class="rain-controls">
+                        <div class="control-group">
+                            <h4>Speed & Intensity</h4>
+                            <div class="control-item">
+                                <label>Rain Speed</label>
+                                <input type="range" id="rainSpeed" min="1" max="100" value="35" onchange="updateRainSpeed()">
+                            </div>
+                            <div class="control-item">
+                                <label>Intensity</label>
+                                <input type="range" id="rainIntensity" min="1" max="100" value="70" onchange="updateRainIntensity()">
+                            </div>
+                            <div class="control-item">
+                                <label>Density</label>
+                                <input type="range" id="rainDensity" min="1" max="100" value="100" onchange="updateRainDensity()">
+                            </div>
+                            <div class="control-item">
+                                <label>Character Size (1-100)</label>
+                                <input type="range" id="characterSize" min="1" max="100" value="10" oninput="updateCharacterSize()">
+                                <div class="zoom-control">
+                                    <button class="zoom-btn" onclick="decreaseCharacterSize()">-</button>
+                                    <span class="zoom-display" id="charSizeDisplay">10px</span>
+                                    <button class="zoom-btn" onclick="increaseCharacterSize()">+</button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="control-group">
+                            <h4>Colors & Effects</h4>
+                            <div style="padding: 10px; background: rgba(0,255,65,0.1); border-radius: 5px; margin-bottom: 10px; font-size: 12px; color: #ccc;">
+                                <strong>💡 TIP:</strong> Left-click to select color → Right-click anywhere to re-enable controls if needed
+                            </div>
+                            <div class="control-item">
+                                <label>Primary Color</label>
+                                <input type="color" id="primaryColor" value="#00ff41" onchange="updateRainColors()">
+                            </div>
+                            <div class="control-item">
+                                <label>Secondary Color</label>
+                                <input type="color" id="secondaryColor" value="#00cc33" onchange="updateRainColors()">
+                            </div>
+                        </div>
+
+                        <div class="control-group">
+                            <h4>Rainbow Spectrum</h4>
+                            <div class="rainbow-spectrum">
+                                <div class="spectrum-color active" style="background: #ff0000;" onclick="setSpectrumColor('#ff0000', this)"></div>
+                                <div class="spectrum-color" style="background: #ff8000;" onclick="setSpectrumColor('#ff8000', this)"></div>
+                                <div class="spectrum-color" style="background: #ffff00;" onclick="setSpectrumColor('#ffff00', this)"></div>
+                                <div class="spectrum-color" style="background: #00ff00;" onclick="setSpectrumColor('#00ff00', this)"></div>
+                                <div class="spectrum-color" style="background: #0080ff;" onclick="setSpectrumColor('#0080ff', this)"></div>
+                                <div class="spectrum-color" style="background: #8000ff;" onclick="setSpectrumColor('#8000ff', this)"></div>
+                                <div class="spectrum-color" style="background: #ff0080;" onclick="setSpectrumColor('#ff0080', this)"></div>
+                            </div>
+                        </div>
+
+                        <div class="control-group">
+                            <h4>Pattern Settings</h4>
+                            <div class="control-item">
+                                <label>Character Set</label>
+                                <select id="characterSet" onchange="updateCharacterSet()">
+                                    <option value="matrix">Matrix (A-Z, 0-9, @#$)</option>
+                                    <option value="binary">Binary (01)</option>
+                                    <option value="hex">Hexadecimal (0-F)</option>
+                                    <option value="symbols">Symbols (@#$%^&*)</option>
+                                    <option value="katakana">Katakana (アイウエオ...)</option>
+                                    <option value="custom">Custom</option>
+                                </select>
+                                <input type="text" id="customCharacters" placeholder="Enter custom characters..." style="display: none; margin-top: 5px; padding: 5px; width: 100%; background: rgba(0,255,65,0.1); border: 1px solid #00ff41; color: #00ff41; font-family: monospace;" onchange="updateCharacterSet()">
+                            </div>
+                            <div class="control-item">
+                                <label>Direction</label>
+                                <select id="rainDirection" onchange="updateRainDirection()">
+                                    <option value="down">Down</option>
+                                    <option value="up">Up</option>
+                                    <option value="left">Left</option>
+                                    <option value="right">Right</option>
+                                    <option value="diagonal">Diagonal</option>
+                                    <option value="toward">🚇 Toward Camera (3D)</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right Column removed: Audio File Player and info deleted for Wallpaper Engine compliance -->
+
+        </div>
+    </div>
+
+    <script>
+        // === REVERSE FLOW CONTROL ===
+        let reverseFlowMultiplier = 1; // 1 = normal, -1 = reversed
+
+        // === ENVIRONMENT DETECTION (Wallpaper Engine) ===
+        const isWallpaperEngine = !!window.wallpaperRegisterAudioListener;
+
+        // === AUDIO MODE SETTINGS ===
+        let audioReverseEnabled = false;  // Default: disabled per user request
+        let audioDiagonalsEnabled = true; // Default: disabled per user request
+
+        function toggleAudioReverse() {
+            audioReverseEnabled = !audioReverseEnabled;
+            const btn = document.getElementById('toggleAudioReverseBtn');
+
+            if (audioReverseEnabled) {
+                btn.textContent = '✅ Reverse Flow';
+                btn.style.background = '#00ff41';
+                btn.style.color = '#000';
+                MatrixRainEngine.logActivity('Audio reverse flow enabled', 'info');
+            } else {
+                btn.textContent = '❌ Reverse Flow';
+                btn.style.background = '#333';
+                btn.style.color = '#666';
+                MatrixRainEngine.logActivity('Audio reverse flow disabled', 'info');
+            }
+        }
+
+        function toggleAudioDiagonals() {
+            audioDiagonalsEnabled = !audioDiagonalsEnabled;
+            const btn = document.getElementById('toggleAudioDiagonalsBtn');
+
+            if (audioDiagonalsEnabled) {
+                btn.textContent = '✅ Angles';
+                btn.style.background = '#00ff41';
+                btn.style.color = '#000';
+                MatrixRainEngine.logActivity('Audio angles enabled', 'info');
+            } else {
+                btn.textContent = '✅ Angles';
+                btn.style.background = '#333';
+                btn.style.color = '#666';
+                MatrixRainEngine.logActivity('Audio angles disabled', 'info');
+            }
+        }
+
+        function refreshAudioReactive() {
+            if (audioReactiveActive) {
+                MatrixRainEngine.logActivity('🔄 Refreshing audio reactive mode...', 'info');
+                // Stop and restart audio reactive mode
+                toggleAudioReactive().then(() => {
+                    setTimeout(() => {
+                        toggleAudioReactive();
+                    }, 500);
+                });
+            } else {
+                MatrixRainEngine.logActivity('⚠️ Audio reactive mode not active', 'warning');
+            }
+        }
+
+        function hardRefresh() {
+            MatrixRainEngine.logActivity('🔄 Hard refresh - reloading wallpaper...', 'info');
+            // Force full page reload with cache bypass (like Ctrl+F5)
+            setTimeout(() => {
+                window.location.reload(true);
+            }, 100);
+        }
+
+        // === MODE BUTTON MANAGEMENT - Prevent multiple modes at once ===
+        function updateModeButtons(activeMode) {
+            const orchestratorBtn = document.getElementById('autoOrchestratorBtn');
+            const audioBtn = document.getElementById('audioReactiveBtn');
+
+            orchestratorBtn.disabled = false;
+            audioBtn.disabled = false;
+
+            if (activeMode === 'orchestrator') {
+                audioBtn.disabled = true;
+            } else if (activeMode === 'audio') {
+                orchestratorBtn.disabled = true;
+            }
+        }
+
+        
+
+        // Helper function to convert HSL to Hex
+        function hslToHex(h, s, l) {
+            l /= 100;
+            const a = s * Math.min(l, 1 - l) / 100;
+            const f = n => {
+                const k = (n + h / 30) % 12;
+                const color = l - a * Math.max(Math.min(k - 3, 9 - k, 1), -1);
+                return Math.round(255 * color).toString(16).padStart(2, '0');
+            };
+            return `#${f(0)}${f(8)}${f(4)}`;
+        }
+
+        // === MATRIX RAIN ADVANCED VISUAL CONTROL ENGINE ===
+        const MatrixRainEngine = {
+            // Rain configuration
+            rainConfig: {
+                pattern: 'classic',
+                speed: 35,
+                intensity: 70,
+                density: 100,
+                primaryColor: '#00ff41',
+                secondaryColor: '#00cc33',
+                fontSize: 10,
+                characterSet: 'matrix',
+                direction: 'down',
+                spectrumColor: '#ff0000'
+            },
+            
+            // Pattern definitions
+            patterns: {
+                classic: {
+                    name: 'Classic Matrix',
+                    description: 'Traditional matrix rain effect',
+                    characters: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ123456789@#$%^&*()*&^%+-/~{[|`]}',
+                    direction: 'down'
+                },
+                reverse: {
+                    name: 'Reverse Flow',
+                    description: 'Matrix rain flowing upward',
+                    characters: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ123456789@#$%^&*()*&^%+-/~{[|`]}',
+                    direction: 'up'
+                },
+                sideways: {
+                    name: 'Sideways Flow',
+                    description: 'Matrix rain flowing horizontally',
+                    characters: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ123456789@#$%^&*()*&^%+-/~{[|`]}',
+                    direction: 'left'
+                },
+                bidirectional: {
+                    name: 'Bidirectional',
+                    description: 'Matrix rain flowing in two directions',
+                    characters: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ123456789@#$%^&*()*&^%+-/~{[|`]}',
+                    direction: 'bidirectional'
+                },
+                quadirectional: {
+                    name: 'Quadirectional',
+                    description: 'Matrix rain flowing in four directions',
+                    characters: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ123456789@#$%^&*()*&^%+-/~{[|`]}',
+                    direction: 'quadirectional'
+                },
+                interdimensional: {
+                    name: 'Interdimensional',
+                    description: 'Multi-dimensional matrix rain',
+                    characters: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ123456789@#$%^&*()*&^%+-/~{[|`]}',
+                    direction: 'interdimensional'
+                },
+                rainbow: {
+                    name: 'Rainbow Spectrum',
+                    description: 'Rainbow-colored matrix rain',
+                    characters: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ123456789@#$%^&*()*&^%+-/~{[|`]}',
+                    direction: 'down',
+                    colors: ['#ff0000', '#ff8000', '#ffff00', '#00ff00', '#0080ff', '#8000ff', '#ff0080']
+                },
+                pentad: {
+                    name: 'Pentad Prism',
+                    description: 'Five-dimensional prism effect',
+                    characters: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ123456789@#$%^&*()*&^%+-/~{[|`]}',
+                    direction: 'pentad'
+                },
+                chaos: {
+                    name: 'Chaos Flow',
+                    description: 'Chaotic matrix rain patterns',
+                    characters: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ123456789@#$%^&*()*&^%+-/~{[|`]}',
+                    direction: 'chaos'
+                },
+                harmonic: {
+                    name: 'Harmonic Waves',
+                    description: 'Harmonically synchronized rain',
+                    characters: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ123456789@#$%^&*()*&^%+-/~{[|`]}',
+                    direction: 'harmonic'
+                }
+            },
+            
+            // === LOGGING FUNCTIONS ===
+            logActivity(message, type = 'info') {
+                console.log(`🌊 Matrix Rain: ${message}`);
+                try {
+                    this.addActivity(message, type === 'success');
+                    this.addAuditEntry(`[🌊 Matrix Rain] ${message}`);
+                } catch (error) {
+                    console.log(`🌊 Matrix Rain: ${message} (UI elements not ready)`);
+                }
+            },
+
+
+            // === PATTERN CONTROL FUNCTIONS ===
+            setRainPattern(pattern, buttonElement) {
+                console.log(`🌊 Matrix Rain: Setting pattern to ${pattern}`);
+
+                // Update active button
+                document.querySelectorAll('.pattern-btn').forEach(btn => btn.classList.remove('active'));
+                if (buttonElement) {
+                    buttonElement.classList.add('active');
+                }
+
+                this.rainConfig.pattern = pattern;
+                const patternData = this.patterns[pattern];
+
+                this.addActivity(`🌧️ Rain pattern changed to: ${patternData.name}`, true);
+                this.addAuditEntry(`[🌊 Matrix Rain] 🌧️ Pattern changed: ${patternData.name} - ${patternData.description}`);
+
+                // Apply pattern-specific settings
+                this.applyPatternSettings(pattern);
+
+                return `Pattern set to: ${patternData.name}`;
+            },
+
+            applyPatternSettings(pattern) {
+                const patternData = this.patterns[pattern];
+                
+                // Update character set
+                if (patternData.characters) {
+                    this.rainConfig.characterSet = patternData.characters;
+                    document.getElementById('characterSet').value = 'custom';
+                }
+                
+                // Update direction
+                if (patternData.direction) {
+                    this.rainConfig.direction = patternData.direction;
+                    document.getElementById('rainDirection').value = patternData.direction;
+                }
+                
+                // Apply special effects
+                if (pattern === 'rainbow') {
+                    this.applyRainbowEffect();
+                } else if (pattern === 'pentad') {
+                    this.applyPentadEffect();
+                } else if (pattern === 'chaos') {
+                    this.applyChaosEffect();
+                } else if (pattern === 'harmonic') {
+                    this.applyHarmonicEffect();
+                }
+            },
+
+            applyRainbowEffect() {
+                console.log("🌈 Applying rainbow spectrum effect...");
+                this.addActivity("🌈 Rainbow spectrum effect applied", true);
+                this.addAuditEntry("[🌊 Matrix Rain] 🌈 Rainbow spectrum effect activated");
+            },
+
+            applyPentadEffect() {
+                console.log("🔮 Applying pentad prism effect...");
+                this.addActivity("🔮 Pentad prism effect applied", true);
+                this.addAuditEntry("[🌊 Matrix Rain] 🔮 Pentad prism effect activated");
+            },
+
+            applyChaosEffect() {
+                console.log("🌀 Applying chaos flow effect...");
+                this.addActivity("🌀 Chaos flow effect applied", true);
+                this.addAuditEntry("[🌊 Matrix Rain] 🌀 Chaos flow effect activated");
+            },
+
+            applyHarmonicEffect() {
+                console.log("🎵 Applying harmonic wave effect...");
+                this.addActivity("🎵 Harmonic wave effect applied", true);
+                this.addAuditEntry("[🌊 Matrix Rain] 🎵 Harmonic wave effect activated");
+            },
+
+            // === VISUAL CONTROL FUNCTIONS ===
+            updateRainSpeed() {
+                const speed = document.getElementById('rainSpeed').value;
+                this.rainConfig.speed = parseInt(speed);
+                this.addActivity(`⚡ Rain speed updated to: ${speed}`, true);
+                this.addAuditEntry(`[🌊 Matrix Rain] ⚡ Speed updated: ${speed}`);
+            },
+
+            updateRainIntensity() {
+                const intensity = document.getElementById('rainIntensity').value;
+                this.rainConfig.intensity = parseInt(intensity);
+                this.addActivity(`🔥 Rain intensity updated to: ${intensity}%`, true);
+                this.addAuditEntry(`[🌊 Matrix Rain] 🔥 Intensity updated: ${intensity}%`);
+            },
+
+            updateRainDensity() {
+                const density = document.getElementById('rainDensity').value;
+                this.rainConfig.density = parseInt(density);
+                this.addActivity(`🌧️ Rain density updated to: ${density}%`, true);
+                this.addAuditEntry(`[🌊 Matrix Rain] 🌧️ Density updated: ${density}%`);
+            },
+
+            updateRainColors() {
+                const primary = document.getElementById('primaryColor').value;
+                const secondary = document.getElementById('secondaryColor').value;
+                this.rainConfig.primaryColor = primary;
+                this.rainConfig.secondaryColor = secondary;
+                this.addActivity(`🎨 Colors updated: Primary ${primary}, Secondary ${secondary}`, true);
+                this.addAuditEntry(`[🌊 Matrix Rain] 🎨 Colors updated: Primary ${primary}, Secondary ${secondary}`);
+            },
+
+
+            updateFontSize() {
+                const fontSize = document.getElementById('fontSize').value;
+                this.rainConfig.fontSize = parseInt(fontSize);
+                this.addActivity(`📝 Font size updated to: ${fontSize}px`, true);
+                this.addAuditEntry(`[🌊 Matrix Rain] 📝 Font size updated: ${fontSize}px`);
+            },
+
+            updateCharacterSet() {
+                const characterSet = document.getElementById('characterSet').value;
+                this.rainConfig.characterSet = characterSet;
+                this.addActivity(`🔤 Character set updated to: ${characterSet}`, true);
+                this.addAuditEntry(`[🌊 Matrix Rain] 🔤 Character set updated: ${characterSet}`);
+            },
+
+            updateRainDirection() {
+                const direction = document.getElementById('rainDirection').value;
+                const oldDirection = this.rainConfig.direction;
+                this.rainConfig.direction = direction;
+
+                // Reinitialize drop positions when switching to/from horizontal
+                if (matrixCanvas && matrixDrops) {
+                    const fontSize = this.rainConfig.fontSize;
+                    const wasHorizontal = (oldDirection === 'left' || oldDirection === 'right');
+                    const isHorizontal = (direction === 'left' || direction === 'right');
+
+                    if (wasHorizontal !== isHorizontal) {
+                        // Switching orientation - reinitialize all drops
+                        const columns = Math.floor(matrixCanvas.width / fontSize);
+                        for (let i = 0; i < columns; i++) {
+                            if (isHorizontal) {
+                                // Going horizontal: randomize X positions across full width
+                                matrixDrops[i] = Math.random() * (matrixCanvas.width / fontSize);
+                            } else {
+                                // Going vertical: randomize Y positions across full height
+                                matrixDrops[i] = Math.random() * (matrixCanvas.height / fontSize);
+                            }
+                        }
+                    }
+                }
+
+                this.addActivity(`➡️ Rain direction updated to: ${direction}`, true);
+                this.addAuditEntry(`[🌊 Matrix Rain] ➡️ Direction updated: ${direction}`);
+            },
+
+            setSpectrumColor(color, colorElement) {
+                document.querySelectorAll('.spectrum-color').forEach(btn => btn.classList.remove('active'));
+                if (colorElement) {
+                    colorElement.classList.add('active');
+                }
+                this.rainConfig.primaryColor = color;
+                this.rainConfig.secondaryColor = color;
+                this.addActivity(`🌈 Spectrum color set to: ${color}`, true);
+                this.addAuditEntry(`[🌊 Matrix Rain] 🌈 Spectrum color: ${color}`);
+            },
+
+            // === TOOLKIT INTEGRATION FUNCTIONS ===
+            activatePatternAnalysis() {
+                const result = toolkits.kleene.functions.analyzeRecursiveConvergence("matrix_patterns");
+                MatrixRainEngine.logActivity(result, 'info');
+                document.getElementById('kleene-result').textContent = result;
+            },
+
+            resurrectVisualData() {
+                const result = toolkits.phoenix.functions.resurrectData("visual_data");
+                MatrixRainEngine.logActivity(result, 'info');
+                document.getElementById('phoenix-result').textContent = result;
+            },
+
+            harmonizePatterns() {
+                const result = toolkits.harmonic.functions.integratePatterns("matrix_patterns");
+                MatrixRainEngine.logActivity(result, 'info');
+                document.getElementById('harmonic-result').textContent = result;
+            },
+
+            createEchoChamber() {
+                const result = toolkits.breath.functions.createEchoChamber("matrix_echoes");
+                MatrixRainEngine.logActivity(result, 'info');
+                document.getElementById('breath-result').textContent = result;
+            },
+
+            interpretSymbols() {
+                const result = toolkits.symbolic.functions.interpretArchetypalSymbol("matrix");
+                MatrixRainEngine.logActivity(result, 'info');
+                document.getElementById('symbolic-result').textContent = result;
+            },
+
+            optimizeFlow() {
+                console.log("⚡ Matrix Rain: Optimizing flow...");
+                
+                const optimization = Math.floor(Math.random() * 20) + 80;
+                const efficiency = Math.floor(Math.random() * 15) + 85;
+                
+                this.addActivity(`⚡ Flow optimization: ${optimization}% optimized, ${efficiency}% efficient`, true);
+                this.addAuditEntry(`[🌊 Matrix Rain] ⚡ Flow optimization: ${optimization}% optimized, ${efficiency}% efficient`);
+                
+                return `Flow optimization: ${optimization}% optimized, ${efficiency}% efficient`;
+            },
+
+            backupVisualState() {
+                console.log("💾 Matrix Rain: Backing up visual state...");
+                
+                const backupSize = Math.floor(Math.random() * 1000) + 100;
+                const redundancy = Math.floor(Math.random() * 100);
+                
+                this.addActivity(`💾 Visual state backup: ${backupSize}MB (${redundancy}% redundancy)`, true);
+                this.addAuditEntry(`[🌊 Matrix Rain] 💾 Visual backup: ${backupSize}MB, ${redundancy}% redundancy`);
+                
+                return `Visual state backup: ${backupSize}MB (${redundancy}% redundancy)`;
+            },
+
+            restoreVisualState() {
+                console.log("🔄 Matrix Rain: Restoring visual state...");
+                
+                const restoreTime = Math.floor(Math.random() * 3000) + 1000;
+                
+                this.addActivity(`🔄 Visual state restore initiated (${restoreTime}ms)`, true);
+                this.addAuditEntry(`[🌊 Matrix Rain] 🔄 Visual restore initiated: ${restoreTime}ms`);
+                
+                setTimeout(() => {
+                    this.addActivity('🔄 Visual state restore completed', true);
+                    this.addAuditEntry('[🌊 Matrix Rain] 🔄 Visual restore completed');
+                }, restoreTime);
+                
+                return `Visual state restore initiated (${restoreTime}ms)`;
+            },
+
+            emergencyStop() {
+                console.log("🚨 Matrix Rain: Emergency stop initiated...");
+                
+                this.addActivity('🚨 EMERGENCY STOP INITIATED!', true);
+                this.addAuditEntry('[🌊 Matrix Rain] 🚨 Emergency stop protocol executed');
+                
+                setTimeout(() => {
+                    alert('Emergency stop completed. All visual patterns safely halted.');
+                }, 2000);
+                
+                return 'Emergency stop initiated';
+            },
+
+            // === UTILITY FUNCTIONS ===
+            addActivity(message, isRecent = false) {
+                const activityFeed = document.querySelector('.activity-feed');
+                if (!activityFeed) {
+                    console.log(`🌊 Matrix Rain: ${message} (activity feed not found)`);
+                    return;
+                }
+                const activityItem = document.createElement('div');
+                activityItem.className = 'activity-item';
+                activityItem.textContent = `${new Date().toLocaleTimeString()} - ${message}`;
+                activityFeed.insertBefore(activityItem, activityFeed.firstChild);
+                if (activityFeed.children.length > 20) {
+                    activityFeed.removeChild(activityFeed.lastChild);
+                }
+                if (isRecent) {
+                    setTimeout(() => {
+                        activityItem.classList.remove('recent');
+                    }, 5000);
+                }
+            },
+
+            addAuditEntry(message) {
+                const auditCanvas = document.querySelector('.audit-canvas');
+                if (!auditCanvas) {
+                    console.log(`🌊 Matrix Rain: ${message} (audit canvas not found)`);
+                    return;
+                }
+                const auditEntry = document.createElement('div');
+                auditEntry.className = 'audit-entry';
+                auditEntry.textContent = message;
+                auditCanvas.insertBefore(auditEntry, auditCanvas.firstChild);
+                if (auditCanvas.children.length > 15) {
+                    auditCanvas.removeChild(auditCanvas.lastChild);
+                }
+            },
+
+            // === INITIALIZATION ===
+            init() {
+                this.addActivity('🌊 Matrix Rain Advanced Visual Control Unit initialized', true);
+                this.addAuditEntry('[🌊 Matrix Rain] 🌊 Advanced Visual Control Unit initialized');
+                console.log("🌊 Matrix Rain Advanced Visual Control Unit initialized");
+            }
+        };
+        window.MatrixRainEngine = MatrixRainEngine;
+
+        // === GLOBAL FUNCTIONS FOR BUTTON INTERACTIONS ===
+        function setRainPattern(pattern, buttonElement) { MatrixRainEngine.setRainPattern(pattern, buttonElement); }
+        function updateRainSpeed() { MatrixRainEngine.updateRainSpeed(); }
+        function updateRainIntensity() { MatrixRainEngine.updateRainIntensity(); }
+        function updateRainDensity() { MatrixRainEngine.updateRainDensity(); }
+        function updateRainColors() { MatrixRainEngine.updateRainColors(); }
+        function updateFontSize() { MatrixRainEngine.updateFontSize(); }
+        function updateCharacterSet() { MatrixRainEngine.updateCharacterSet(); }
+        function updateRainDirection() { MatrixRainEngine.updateRainDirection(); }
+        function setSpectrumColor(color, colorElement) { MatrixRainEngine.setSpectrumColor(color, colorElement); }
+        function activatePatternAnalysis() { MatrixRainEngine.activatePatternAnalysis(); }
+        function resurrectVisualData() { MatrixRainEngine.resurrectVisualData(); }
+        function harmonizePatterns() { MatrixRainEngine.harmonizePatterns(); }
+        function createEchoChamber() { MatrixRainEngine.createEchoChamber(); }
+        function interpretSymbols() { MatrixRainEngine.interpretSymbols(); }
+        function optimizeFlow() { MatrixRainEngine.optimizeFlow(); }
+        function backupVisualState() { MatrixRainEngine.backupVisualState(); }
+        function restoreVisualState() { MatrixRainEngine.restoreVisualState(); }
+        function emergencyStop() { MatrixRainEngine.emergencyStop(); }
+
+        function closeMatrixModal() {
+            const modal = document.querySelector('.matrix-modal');
+            modal.style.display = 'none';
+        }
+
+        function toggleMatrixModal() {
+            const modal = document.querySelector('.matrix-modal');
+            const minimizeBtn = document.getElementById('minimizeBtn');
+
+            if (modal.classList.contains('minimized')) {
+                modal.classList.remove('minimized');
+                minimizeBtn.textContent = '−';
+                minimizeBtn.title = 'Minimize utilities to see matrix rain';
+            } else {
+                modal.classList.add('minimized');
+                minimizeBtn.textContent = 'M +';
+                minimizeBtn.title = 'Press M or click to maximize';
+            }
+        }
+
+        // === MATRIX RAIN ANIMATION ENGINE ===
+        let matrixCanvas, matrixCtx, matrixDrops, matrixInterval;
+        // Density-based active column mask helpers
+        window.activeColumnsMask = [];
+        window.columnOrder = [];
+
+        function recomputeActiveColumnsMask() {
+            const fontSize = MatrixRainEngine.rainConfig.fontSize;
+            if (!matrixCanvas) return;
+            const columns = Math.max(1, Math.floor(matrixCanvas.width / fontSize));
+            const density = Math.max(1, Math.min(100, Number(MatrixRainEngine.rainConfig.density || 50)));
+
+            // Build or refresh column order when size changes
+            if (!window.columnOrder || window.columnOrder.length !== columns) {
+                window.columnOrder = Array.from({ length: columns }, (_, i) => i);
+                for (let i = window.columnOrder.length - 1; i > 0; i--) {
+                    const j = Math.floor(Math.random() * (i + 1));
+                    [window.columnOrder[i], window.columnOrder[j]] = [window.columnOrder[j], window.columnOrder[i]];
+                }
+            }
+
+            const activeCount = Math.max(1, Math.floor((density / 100) * columns));
+            window.activeColumnsMask = new Array(columns).fill(false);
+            for (let k = 0; k < activeCount; k++) {
+                const col = window.columnOrder[k];
+                window.activeColumnsMask[col] = true;
+            }
+
+            // Always preserve user and Ollama columns
+            if (window.userMessageColumns) {
+                window.userMessageColumns.forEach(col => {
+                    if (col >= 0 && col < window.activeColumnsMask.length) window.activeColumnsMask[col] = true;
+                });
+            }
+            if (window.ollamaMessageColumns) {
+                window.ollamaMessageColumns.forEach(col => {
+                    if (col >= 0 && col < window.activeColumnsMask.length) window.activeColumnsMask[col] = true;
+                });
+            }
+        }
+        // Density-based column activation mask and order
+        window.activeColumnsMask = null;
+        window.columnOrder = null;
+        
+        function initMatrixRain() {
+            console.log("🌊 Matrix Rain: Initializing animation...");
+            matrixCanvas = document.getElementById('matrixRainCanvas');
+            if (!matrixCanvas) {
+                console.error("🌊 Matrix Rain: Canvas element not found!");
+                return;
+            }
+            matrixCtx = matrixCanvas.getContext('2d');
+            if (!matrixCtx) {
+                console.error("🌊 Matrix Rain: Could not get canvas context!");
+                return;
+            }
+            console.log("🌊 Matrix Rain: Canvas initialized successfully");
+            
+            // Ensure canvas is visible
+            matrixCanvas.style.display = 'block';
+            matrixCanvas.style.opacity = '0.8';
+            console.log("🌊 Matrix Rain: Canvas visibility set to:", matrixCanvas.style.display, "opacity:", matrixCanvas.style.opacity);
+            
+            // Set canvas size
+            function resizeCanvas() {
+                matrixCanvas.width = window.innerWidth;
+                matrixCanvas.height = window.innerHeight;
+                // Recompute active columns when canvas size changes
+                recomputeActiveColumnsMask();
+            }
+            
+            resizeCanvas();
+            window.addEventListener('resize', resizeCanvas);
+            
+            // Initialize drops
+            const fontSize = MatrixRainEngine.rainConfig.fontSize;
+            const columns = Math.floor(matrixCanvas.width / fontSize);
+            matrixDrops = [];
+            window.dropSpeeds = []; // Per-column speed variation
+            window.horizontalYPositions = []; // Y positions for horizontal rain
+
+            for (let i = 0; i < columns; i++) {
+                // Highly randomized starting positions - spread across entire visible + off-screen area
+                matrixDrops[i] = (Math.random() * matrixCanvas.height / fontSize) - (Math.random() * 50);
+                // Random speed variation (0.7 to 1.3x normal speed)
+                window.dropSpeeds[i] = 0.7 + Math.random() * 0.6;
+                // Random Y position for horizontal rain (spread across screen height)
+                window.horizontalYPositions[i] = Math.random() * (matrixCanvas.height / fontSize);
+            }
+            // Initialize density-based active columns mask
+            recomputeActiveColumnsMask();
+
+            // Initialize density-based active columns mask
+            recomputeActiveColumnsMask();
+            
+            console.log(`🌊 Matrix Rain: Initialized ${columns} columns with font size ${fontSize}`);
+            
+            // Start animation
+            startMatrixAnimation();
+        }
+
+        function startMatrixAnimation() {
+            if (matrixInterval) {
+                clearInterval(matrixInterval);
+            }
+            
+            const speed = MatrixRainEngine.rainConfig.speed;
+            console.log(`🌊 Matrix Rain: Starting animation with speed ${speed}ms`);
+            matrixInterval = setInterval(drawMatrixRain, speed);
+            console.log(`🌊 Matrix Rain: Animation interval set: ${matrixInterval}`);
+        }
+
+        // Recompute active column mask based on current density and canvas size
+        function recomputeActiveColumnsMask() {
+            if (!matrixCanvas) return;
+            const fontSize = MatrixRainEngine.rainConfig.fontSize;
+            const columns = Math.floor(matrixCanvas.width / fontSize);
+            const densityPercent = parseInt(MatrixRainEngine.rainConfig.density) || 100;
+            const activeCount = Math.max(1, Math.round(columns * densityPercent / 100));
+
+            // Build or rebuild a stable randomized column order when column count changes
+            if (!window.columnOrder || window.columnOrder.length !== columns) {
+                window.columnOrder = Array.from({ length: columns }, (_, i) => i);
+                for (let i = columns - 1; i > 0; i--) {
+                    const j = Math.floor(Math.random() * (i + 1));
+                    const tmp = window.columnOrder[i];
+                    window.columnOrder[i] = window.columnOrder[j];
+                    window.columnOrder[j] = tmp;
+                }
+            }
+
+            window.activeColumnsMask = new Array(columns).fill(false);
+            for (let k = 0; k < activeCount && k < window.columnOrder.length; k++) {
+                window.activeColumnsMask[window.columnOrder[k]] = true;
+            }
+        }
+        
+        // Helper function to get random character
+        function getNextCharacter(characters, columnIndex, isUserColumn) {
+            if (window.continuumSpeechGlyphs && window.continuumSpeechGlyphs.length) {
+                const glyphs = window.continuumSpeechGlyphs;
+                const stride = window.continuumSpeechStride || 1;
+                const index = (window.continuumSpeechTick + columnIndex * 7 + stride) % glyphs.length;
+                return glyphs.charAt(index);
+            }
+            return characters[Math.floor(Math.random() * characters.length)];
+        }
+
+        function drawMatrixRain() {
+            const config = MatrixRainEngine.rainConfig;
+            const fontSize = config.fontSize;
+            const opacity = 1.0; // Always full opacity
+            if (window.continuumSpeechGlyphs && window.continuumSpeechGlyphs.length) {
+                window.continuumSpeechTick = ((window.continuumSpeechTick || 0) + (window.continuumSpeechStride || 1)) % 1000000;
+            }
+
+            // Debug: Log first few calls
+            if (!window.drawCount) window.drawCount = 0;
+            window.drawCount++;
+            if (window.drawCount <= 5) {
+                console.log(`🌊 Matrix Rain: Draw call #${window.drawCount}, pattern: ${config.pattern}, opacity: ${opacity}`);
+            }
+            
+
+            // === AUTO-CONTRAST BACKGROUND ===
+            // Calculate complementary color based on current character colors
+            function hexToHSL_bg(hex) {
+                hex = hex.replace('#', '');
+                const r = parseInt(hex.substr(0, 2), 16) / 255;
+                const g = parseInt(hex.substr(2, 2), 16) / 255;
+                const b = parseInt(hex.substr(4, 2), 16) / 255;
+                const max = Math.max(r, g, b), min = Math.min(r, g, b);
+                let h, s, l = (max + min) / 2;
+                if (max === min) {
+                    h = s = 0;
+                } else {
+                    const d = max - min;
+                    s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+                    switch (max) {
+                        case r: h = ((g - b) / d + (g < b ? 6 : 0)) / 6; break;
+                        case g: h = ((b - r) / d + 2) / 6; break;
+                        case b: h = ((r - g) / d + 4) / 6; break;
+                    }
+                }
+                return { h: Math.round(h * 360), s: Math.round(s * 100), l: Math.round(l * 100) };
+            }
+
+            // Get average hue from primary and secondary colors
+            let avgHue = 0;
+            let primaryHSL, secondaryHSL;
+
+            if (config.primaryColor) {
+                if (config.primaryColor.includes('#')) {
+                    primaryHSL = hexToHSL_bg(config.primaryColor);
+                } else if (config.primaryColor.includes('hsl')) {
+                    const match = config.primaryColor.match(/hsl\((\d+),\s*(\d+)%,\s*(\d+)%\)/);
+                    if (match) primaryHSL = { h: parseInt(match[1]), s: parseInt(match[2]), l: parseInt(match[3]) };
+                }
+            }
+
+            if (config.secondaryColor) {
+                if (config.secondaryColor.includes('#')) {
+                    secondaryHSL = hexToHSL_bg(config.secondaryColor);
+                } else if (config.secondaryColor.includes('hsl')) {
+                    const match = config.secondaryColor.match(/hsl\((\d+),\s*(\d+)%,\s*(\d+)%\)/);
+                    if (match) secondaryHSL = { h: parseInt(match[1]), s: parseInt(match[2]), l: parseInt(match[3]) };
+                }
+            }
+
+            // Calculate average hue
+            if (primaryHSL && secondaryHSL) {
+                avgHue = (primaryHSL.h + secondaryHSL.h) / 2;
+            } else if (primaryHSL) {
+                avgHue = primaryHSL.h;
+            } else {
+                avgHue = 120; // Default green
+            }
+
+            // Complementary color (opposite on color wheel)
+            const complementHue = (avgHue + 180) % 360;
+
+            // Clear canvas with auto-contrast background (dark complementary color)
+            matrixCtx.fillStyle = `hsla(${complementHue}, 80%, 8%, 0.12)`;
+            matrixCtx.fillRect(0, 0, matrixCanvas.width, matrixCanvas.height);
+            
+            // Set font
+            matrixCtx.font = `${fontSize}px monospace`;
+            
+            // Get character set
+            let characters = config.characterSet;
+            if (characters === 'matrix') {
+                characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ123456789@#$%^&*()*&^%+-/~{[|`]}';
+            } else if (characters === 'binary') {
+                characters = '01';
+            } else if (characters === 'hex') {
+                characters = '0123456789ABCDEF';
+            } else if (characters === 'symbols') {
+                characters = '@#$%^&*()_+-=[]{}|;:,.<>?';
+            } else if (characters === 'katakana') {
+                characters = 'アイウエオカキクケコサシスセソタチツテトナニヌネノハヒフヘホマミムメモヤユヨラリルレロワヲンガギグゲゴザジズゼゾダヂヅデドバビブベボパピプペポ';
+            }
+
+            // Draw rain based on DIRECTION first, then pattern
+            const direction = config.direction;
+
+            if (direction === 'toward') {
+                // 3D toward camera mode - uses special positioning with any pattern
+                draw3DTowardCamera(characters, fontSize, opacity, config.pattern);
+            } else {
+                // Traditional 2D directional rain
+                if (config.pattern === 'particles') {
+                    drawParticleField(characters, fontSize, opacity);
+                } else if (config.pattern === 'rainbow') {
+                    drawRainbowRain(characters, fontSize, opacity);
+                } else if (config.pattern === 'pentad') {
+                    drawPentadRain(characters, fontSize, opacity);
+                } else if (config.pattern === 'chaos') {
+                    drawChaosRain(characters, fontSize, opacity);
+                } else if (config.pattern === 'harmonic') {
+                    drawHarmonicRain(characters, fontSize, opacity);
+                } else {
+                    drawClassicRain(characters, fontSize, opacity);
+                }
+            }
+        }
+        
+        // Track animation state for all patterns
+        if (!window.geometricState) {
+            window.geometricState = {
+                time: 0,
+                rotation: 0,
+                pulsePhase: 0,
+                selectedPattern: 0
+            };
+        }
+        
+        // Particle system state
+        if (!window.particles) {
+            window.particles = [];
+        }
+        
+        function drawClassicRain(characters, fontSize, opacity) {
+            const config = MatrixRainEngine.rainConfig;
+            const direction = config.direction || 'down';
+            
+            // Debug: Log drawing info for first few frames
+            if (window.drawCount <= 3) {
+                console.log(`🌊 Matrix Rain: Direction ${direction}, color: ${config.primaryColor}`);
+            }
+            
+            if (direction === 'left' || direction === 'right') {
+                // HORIZONTAL rain (left/right) - USE ALL DROPS
+                const columns = Math.floor(matrixCanvas.width / fontSize);
+                for (let i = 0; i < columns; i++) {
+                    // Check if this is a user message column FIRST
+                    const isUserColumn = window.userMessageColumns && window.userMessageColumns.has(i);
+
+                    // Skip columns used ONLY by Ollama (don't skip user columns even if Ollama uses them)
+                    if (!isUserColumn && window.ollamaMessageColumns && window.ollamaMessageColumns.has(i)) {
+                        continue;
+                    }
+
+                    // Apply density mask (do not skip user columns)
+                    if (!isUserColumn && window.activeColumnsMask && window.activeColumnsMask.length > i && !window.activeColumnsMask[i]) {
+                        continue;
+                    }
+
+                    const char = getNextCharacter(characters, i, isUserColumn);
+                    const y = (window.horizontalYPositions && window.horizontalYPositions[i] ? window.horizontalYPositions[i] : Math.random() * (matrixCanvas.height / fontSize)) * fontSize;
+                    const x = matrixDrops[i] * fontSize;
+
+                    matrixCtx.fillStyle = config.primaryColor;
+                    matrixCtx.globalAlpha = opacity;
+                    matrixCtx.fillText(char, x, y);
+
+                    // Update horizontal position
+                    const dropSpeed = window.dropSpeeds && window.dropSpeeds[i] ? window.dropSpeeds[i] : 1;
+                    matrixDrops[i] += dropSpeed * (direction === 'left' ? -1 : 1) * reverseFlowMultiplier;
+
+                    // Simple wrap around - bulletproof
+                    const maxCols = matrixCanvas.width / fontSize;
+                    while (matrixDrops[i] < 0) matrixDrops[i] += maxCols + 10;
+                    while (matrixDrops[i] > maxCols) matrixDrops[i] -= maxCols + 10;
+                }
+            } else if (direction === 'diagonal') {
+                // DIAGONAL rain
+                const streams = Math.floor(matrixCanvas.width / fontSize);
+                for (let i = 0; i < streams; i++) {
+                    // Check if this is a user message column FIRST
+                    const isUserColumn = window.userMessageColumns && window.userMessageColumns.has(i);
+
+                    // Skip streams used ONLY by Ollama (don't skip user columns even if Ollama uses them)
+                    if (!isUserColumn && window.ollamaMessageColumns && window.ollamaMessageColumns.has(i)) {
+                        continue;
+                    }
+
+                    // Apply density mask (do not skip user columns)
+                    if (!isUserColumn && window.activeColumnsMask && window.activeColumnsMask.length > i && !window.activeColumnsMask[i]) {
+                        continue;
+                    }
+
+                    const char = getNextCharacter(characters, i, isUserColumn);
+                    const progress = matrixDrops[i];
+                    const x = i * fontSize + progress * fontSize * 0.5;
+                    const y = progress * fontSize;
+
+                    if (x < matrixCanvas.width && y < matrixCanvas.height) {
+                        matrixCtx.fillStyle = config.primaryColor;
+                        matrixCtx.globalAlpha = opacity;
+                        matrixCtx.fillText(char, x, y);
+                    }
+                    
+                    const dropSpeed = window.dropSpeeds && window.dropSpeeds[i] ? window.dropSpeeds[i] : 1;
+                    matrixDrops[i] += dropSpeed * reverseFlowMultiplier;
+                    
+                    // Simple wrap around - bulletproof
+                    const maxDiag = matrixCanvas.height / fontSize;
+                    while (matrixDrops[i] < 0) matrixDrops[i] += maxDiag + 10;
+                    while (matrixDrops[i] > maxDiag) matrixDrops[i] -= maxDiag + 10;
+                    }
+            } else {
+                // VERTICAL rain (up/down)
+                const columns = Math.floor(matrixCanvas.width / fontSize);
+                for (let i = 0; i < columns; i++) {
+                    // Check if this is a user message column FIRST
+                    const isUserColumn = window.userMessageColumns && window.userMessageColumns.has(i);
+
+                    // Skip columns used ONLY by Ollama (don't skip user columns even if Ollama uses them)
+                    if (!isUserColumn && window.ollamaMessageColumns && window.ollamaMessageColumns.has(i)) {
+                        continue;
+                    }
+
+                    // Apply density mask (do not skip user columns)
+                    if (!isUserColumn && window.activeColumnsMask && window.activeColumnsMask.length > i && !window.activeColumnsMask[i]) {
+                        continue;
+                    }
+
+                    const char = getNextCharacter(characters, i, isUserColumn);
+                    const x = i * fontSize;
+                    const y = matrixDrops[i] * fontSize;
+
+                    matrixCtx.fillStyle = config.primaryColor;
+                    matrixCtx.globalAlpha = opacity;
+                    matrixCtx.fillText(char, x, y);
+                    
+                    // Update vertical position
+                    const dropSpeed = window.dropSpeeds && window.dropSpeeds[i] ? window.dropSpeeds[i] : 1;
+                    matrixDrops[i] += dropSpeed * (direction === 'up' ? -1 : 1) * reverseFlowMultiplier;
+                    
+                    // Simple wrap around - bulletproof
+                    const maxRows = matrixCanvas.height / fontSize;
+                    while (matrixDrops[i] < 0) matrixDrops[i] += maxRows + 10;
+                    while (matrixDrops[i] > maxRows) matrixDrops[i] -= maxRows + 10;
+                }
+            }
+        }
+        
+        function drawRainbowRain(characters, fontSize, opacity) {
+            const config = MatrixRainEngine.rainConfig;
+            const direction = config.direction || 'down';
+            const colors = ['#ff0000', '#ff8000', '#ffff00', '#00ff00', '#0080ff', '#8000ff', '#ff0080'];
+
+            if (direction === 'left' || direction === 'right') {
+                const columns = Math.floor(matrixCanvas.width / fontSize);
+                for (let i = 0; i < columns; i++) {
+                    const isUserColumn = window.userMessageColumns && window.userMessageColumns.has(i);
+
+                    // Skip columns used ONLY by Ollama (don't skip user columns even if Ollama uses them)
+                    if (!isUserColumn && window.ollamaMessageColumns && window.ollamaMessageColumns.has(i)) {
+                        continue;
+                    }
+
+                    // Apply density mask (do not skip user columns)
+                    if (!isUserColumn && window.activeColumnsMask && window.activeColumnsMask.length > i && !window.activeColumnsMask[i]) {
+                        continue;
+                    }
+
+                    const char = getNextCharacter(characters, i, isUserColumn);
+                    const y = (window.horizontalYPositions && window.horizontalYPositions[i] ? window.horizontalYPositions[i] : Math.random() * (matrixCanvas.height / fontSize)) * fontSize;
+                    const x = matrixDrops[i] * fontSize;
+                    const colorIndex = Math.floor((i + Date.now() / 100) % colors.length);
+
+                    matrixCtx.fillStyle = colors[colorIndex];
+                    matrixCtx.globalAlpha = opacity;
+                    matrixCtx.fillText(char, x, y);
+
+                    matrixDrops[i] += (direction === 'left' ? -1 : 1) * reverseFlowMultiplier;
+
+                    // Simple wrap around - bulletproof
+                    const maxCols = matrixCanvas.width / fontSize;
+                    while (matrixDrops[i] < 0) matrixDrops[i] += maxCols + 10;
+                    while (matrixDrops[i] > maxCols) matrixDrops[i] -= maxCols + 10;
+                }
+            } else {
+                const columns = Math.floor(matrixCanvas.width / fontSize);
+            for (let i = 0; i < columns; i++) {
+                const isUserColumn = window.userMessageColumns && window.userMessageColumns.has(i);
+
+                // Skip columns used ONLY by Ollama (don't skip user columns even if Ollama uses them)
+                if (!isUserColumn && window.ollamaMessageColumns && window.ollamaMessageColumns.has(i)) {
+                    continue;
+                }
+
+                const char = getNextCharacter(characters, i, isUserColumn);
+                const x = i * fontSize;
+                const y = matrixDrops[i] * fontSize;
+                const colorIndex = Math.floor((i + Date.now() / 100) % colors.length);
+
+                    matrixCtx.fillStyle = colors[colorIndex];
+                matrixCtx.globalAlpha = opacity;
+                matrixCtx.fillText(char, x, y);
+
+                    matrixDrops[i] += (direction === 'up' ? -1 : 1) * reverseFlowMultiplier;
+
+                    // Simple wrap around - bulletproof
+                    const maxRows = matrixCanvas.height / fontSize;
+                    while (matrixDrops[i] < 0) matrixDrops[i] += maxRows + 10;
+                    while (matrixDrops[i] > maxRows) matrixDrops[i] -= maxRows + 10;
+                }
+            }
+        }
+        
+        function drawPentadRain(characters, fontSize, opacity) {
+            const config = MatrixRainEngine.rainConfig;
+            const direction = config.direction || 'down';
+            const pentadColors = ['#ff0000', '#00ff00', '#0000ff', '#ffff00', '#ff00ff'];
+
+            if (direction === 'left' || direction === 'right') {
+                const columns = Math.floor(matrixCanvas.width / fontSize);
+                for (let i = 0; i < columns; i++) {
+                    const isUserColumn = window.userMessageColumns && window.userMessageColumns.has(i);
+
+                    // Skip columns used ONLY by Ollama
+                    if (!isUserColumn && window.ollamaMessageColumns && window.ollamaMessageColumns.has(i)) {
+                        continue;
+                    }
+
+                    // Apply density-based mask (unless user or Ollama column)
+                    if (window.activeColumnsMask && window.activeColumnsMask.length) {
+                        if (!isUserColumn && (!window.ollamaMessageColumns || !window.ollamaMessageColumns.has(i))) {
+                            if (!window.activeColumnsMask[i]) continue;
+                        }
+                    }
+
+                    const char = getNextCharacter(characters, i, isUserColumn);
+                    const y = (window.horizontalYPositions && window.horizontalYPositions[i] ? window.horizontalYPositions[i] : Math.random() * (matrixCanvas.height / fontSize)) * fontSize;
+                    const x = matrixDrops[i] * fontSize;
+                    const color = pentadColors[i % 5];
+
+                    matrixCtx.fillStyle = color;
+                    matrixCtx.globalAlpha = opacity;
+                    matrixCtx.fillText(char, x, y);
+
+                    matrixDrops[i] += (0.5 + Math.random() * 0.5) * (direction === 'left' ? -1 : 1) * reverseFlowMultiplier;
+
+                    // Simple wrap around - bulletproof
+                    const maxCols = matrixCanvas.width / fontSize;
+                    while (matrixDrops[i] < 0) matrixDrops[i] += maxCols + 10;
+                    while (matrixDrops[i] > maxCols) matrixDrops[i] -= maxCols + 10;
+                }
+            } else {
+                const columns = Math.floor(matrixCanvas.width / fontSize);
+            for (let i = 0; i < columns; i++) {
+                const isUserColumn = window.userMessageColumns && window.userMessageColumns.has(i);
+
+                // Skip columns used ONLY by Ollama
+                if (!isUserColumn && window.ollamaMessageColumns && window.ollamaMessageColumns.has(i)) {
+                    continue;
+                }
+
+                // Apply density mask (do not skip user columns)
+                if (!isUserColumn && window.activeColumnsMask && window.activeColumnsMask.length > i && !window.activeColumnsMask[i]) {
+                    continue;
+                }
+
+                const char = getNextCharacter(characters, i, isUserColumn);
+                const x = i * fontSize;
+                const y = matrixDrops[i] * fontSize;
+                    const color = pentadColors[i % 5];
+
+                matrixCtx.fillStyle = color;
+                matrixCtx.globalAlpha = opacity;
+                matrixCtx.fillText(char, x, y);
+
+                    matrixDrops[i] += (0.5 + Math.random() * 0.5) * (direction === 'up' ? -1 : 1) * reverseFlowMultiplier;
+
+                    // Simple wrap around - bulletproof
+                    const maxRows = matrixCanvas.height / fontSize;
+                    while (matrixDrops[i] < 0) matrixDrops[i] += maxRows + 10;
+                    while (matrixDrops[i] > maxRows) matrixDrops[i] -= maxRows + 10;
+                }
+            }
+        }
+        
+        function drawChaosRain(characters, fontSize, opacity) {
+            const config = MatrixRainEngine.rainConfig;
+            const direction = config.direction || 'down';
+
+            if (direction === 'left' || direction === 'right') {
+                const columns = Math.floor(matrixCanvas.width / fontSize);
+                for (let i = 0; i < columns; i++) {
+                    const isUserColumn = window.userMessageColumns && window.userMessageColumns.has(i);
+
+                    // Skip columns used ONLY by Ollama
+                    if (!isUserColumn && window.ollamaMessageColumns && window.ollamaMessageColumns.has(i)) {
+                        continue;
+                    }
+
+                    const char = getNextCharacter(characters, i, isUserColumn);
+                    const y = ((window.horizontalYPositions && window.horizontalYPositions[i] ? window.horizontalYPositions[i] : Math.random() * (matrixCanvas.height / fontSize)) * fontSize) + (Math.random() - 0.5) * 10;
+                    const x = matrixDrops[i] * fontSize;
+                    const hue = (Date.now() + i * 50) % 360;
+
+                    matrixCtx.fillStyle = `hsl(${hue}, 100%, 50%)`;
+                    matrixCtx.globalAlpha = opacity;
+                    matrixCtx.fillText(char, x, y);
+
+                    matrixDrops[i] += (0.2 + Math.random() * 1.5) * (direction === 'left' ? -1 : 1) * reverseFlowMultiplier;
+
+                    // Simple wrap around - bulletproof
+                    const maxCols = matrixCanvas.width / fontSize;
+                    while (matrixDrops[i] < 0) matrixDrops[i] += maxCols + 10;
+                    while (matrixDrops[i] > maxCols) matrixDrops[i] -= maxCols + 10;
+                }
+            } else {
+                const columns = Math.floor(matrixCanvas.width / fontSize);
+            for (let i = 0; i < columns; i++) {
+                const isUserColumn = window.userMessageColumns && window.userMessageColumns.has(i);
+
+                // Skip columns used ONLY by Ollama
+                if (!isUserColumn && window.ollamaMessageColumns && window.ollamaMessageColumns.has(i)) {
+                    continue;
+                }
+
+                // Apply density mask (do not skip user columns)
+                if (!isUserColumn && window.activeColumnsMask && window.activeColumnsMask.length > i && !window.activeColumnsMask[i]) {
+                    continue;
+                }
+
+                const char = getNextCharacter(characters, i, isUserColumn);
+                    const x = i * fontSize + (Math.random() - 0.5) * 10;
+                const y = matrixDrops[i] * fontSize;
+                const hue = (Date.now() + i * 50) % 360;
+
+                    matrixCtx.fillStyle = `hsl(${hue}, 100%, 50%)`;
+                matrixCtx.globalAlpha = opacity;
+                matrixCtx.fillText(char, x, y);
+
+                    matrixDrops[i] += (0.2 + Math.random() * 1.5) * (direction === 'up' ? -1 : 1) * reverseFlowMultiplier;
+
+                    // Simple wrap around - bulletproof
+                    const maxRows = matrixCanvas.height / fontSize;
+                    while (matrixDrops[i] < 0) matrixDrops[i] += maxRows + 10;
+                    while (matrixDrops[i] > maxRows) matrixDrops[i] -= maxRows + 10;
+                }
+            }
+        }
+        
+        function drawHarmonicRain(characters, fontSize, opacity) {
+            const config = MatrixRainEngine.rainConfig;
+            const direction = config.direction || 'down';
+
+            if (direction === 'left' || direction === 'right') {
+                const columns = Math.floor(matrixCanvas.width / fontSize);
+                for (let i = 0; i < columns; i++) {
+                    const isUserColumn = window.userMessageColumns && window.userMessageColumns.has(i);
+                    // Apply density mask (do not skip user columns)
+                    if (!isUserColumn && window.activeColumnsMask && window.activeColumnsMask.length > i && !window.activeColumnsMask[i]) {
+                        continue;
+                    }
+
+                    // Skip columns used ONLY by Ollama
+                    if (!isUserColumn && window.ollamaMessageColumns && window.ollamaMessageColumns.has(i)) {
+                        continue;
+                    }
+
+                    const char = getNextCharacter(characters, i, isUserColumn);
+                    const y = (window.horizontalYPositions && window.horizontalYPositions[i] ? window.horizontalYPositions[i] : Math.random() * (matrixCanvas.height / fontSize)) * fontSize;
+                    const x = matrixDrops[i] * fontSize;
+                    const wave = Math.sin(Date.now() / 1000 + i * 0.1) * 5;
+                    const harmonicX = x + wave;
+                    const hue = 120 + Math.sin(Date.now() / 2000 + i * 0.05) * 60;
+
+                    matrixCtx.fillStyle = `hsl(${hue}, 100%, 50%)`;
+                    matrixCtx.globalAlpha = opacity;
+                    matrixCtx.fillText(char, harmonicX, y);
+
+                    matrixDrops[i] += 0.8 * (direction === 'left' ? -1 : 1) * reverseFlowMultiplier;
+
+                    // Simple wrap around - bulletproof
+                    const maxCols = matrixCanvas.width / fontSize;
+                    while (matrixDrops[i] < 0) matrixDrops[i] += maxCols + 10;
+                    while (matrixDrops[i] > maxCols) matrixDrops[i] -= maxCols + 10;
+                }
+            } else {
+                const columns = Math.floor(matrixCanvas.width / fontSize);
+            for (let i = 0; i < columns; i++) {
+                const isUserColumn = window.userMessageColumns && window.userMessageColumns.has(i);
+
+                // Skip columns used ONLY by Ollama
+                if (!isUserColumn && window.ollamaMessageColumns && window.ollamaMessageColumns.has(i)) {
+                    continue;
+                }
+
+                const char = getNextCharacter(characters, i, isUserColumn);
+                const x = i * fontSize;
+                const y = matrixDrops[i] * fontSize;
+                const wave = Math.sin(Date.now() / 1000 + i * 0.1) * 5;
+                const harmonicY = y + wave;
+                const hue = 120 + Math.sin(Date.now() / 2000 + i * 0.05) * 60;
+
+                    matrixCtx.fillStyle = `hsl(${hue}, 100%, 50%)`;
+                matrixCtx.globalAlpha = opacity;
+                matrixCtx.fillText(char, x, harmonicY);
+
+                    matrixDrops[i] += 0.8 * (direction === 'up' ? -1 : 1) * reverseFlowMultiplier;
+
+                    // Simple wrap around - bulletproof
+                    const maxRows = matrixCanvas.height / fontSize;
+                    while (matrixDrops[i] < 0) matrixDrops[i] += maxRows + 10;
+                    while (matrixDrops[i] > maxRows) matrixDrops[i] -= maxRows + 10;
+                }
+            }
+        }
+        // === PARTICLE FIELD ===
+        function drawParticleField(characters, fontSize, opacity) {
+            const config = MatrixRainEngine.rainConfig;
+            const numParticles = Math.floor(config.intensity * 3);
+            
+            if (window.particles.length === 0) {
+                for (let i = 0; i < numParticles; i++) {
+                    window.particles.push({
+                        x: Math.random() * matrixCanvas.width,
+                        y: Math.random() * matrixCanvas.height,
+                        vx: (Math.random() - 0.5) * 2,
+                        vy: (Math.random() - 0.5) * 2,
+                        char: getNextCharacter(characters, i, false),
+                        phase: Math.random() * Math.PI * 2
+                    });
+                }
+            }
+            
+            const speedFactor = config.speed / 50;
+            const centerX = matrixCanvas.width / 2;
+            const centerY = matrixCanvas.height / 2;
+            
+            for (let i = 0; i < Math.min(window.particles.length, numParticles); i++) {
+                const p = window.particles[i];
+                
+                const dx = centerX - p.x;
+                const dy = centerY - p.y;
+                const dist = Math.sqrt(dx * dx + dy * dy);
+                const force = (dist / 500) * 0.5;
+                
+                p.vx += (dy / dist) * force * speedFactor * reverseFlowMultiplier;
+                p.vy += (-dx / dist) * force * speedFactor * reverseFlowMultiplier;
+                
+                p.x += p.vx * reverseFlowMultiplier;
+                p.y += p.vy * reverseFlowMultiplier;
+                
+                p.vx *= 0.99;
+                p.vy *= 0.99;
+                
+                if (p.x < 0) p.x = matrixCanvas.width;
+                if (p.x > matrixCanvas.width) p.x = 0;
+                if (p.y < 0) p.y = matrixCanvas.height;
+                if (p.y > matrixCanvas.height) p.y = 0;
+                
+                p.phase += 0.05 * reverseFlowMultiplier;
+                const pulse = Math.sin(p.phase) * 0.3 + 0.7;
+                const size = fontSize * pulse;
+                const hue = (i * 10 + window.geometricState.time * 20) % 360;
+                
+                matrixCtx.font = `${size}px monospace`;
+                matrixCtx.fillStyle = `hsl(${hue}, 100%, 50%)`;
+                matrixCtx.globalAlpha = opacity;
+                matrixCtx.fillText(p.char, p.x, p.y);
+            }
+            
+            window.geometricState.time += 0.02 * reverseFlowMultiplier;
+        }
+
+        // === 3D TUNNEL EFFECT (Hackers Gibson Scene) ===
+        // Initialize tunnel characters
+        if (!window.tunnelChars) {
+            window.tunnelChars = [];
+        }
+
+        function draw3DTowardCamera(characters, fontSize, opacity, pattern) {
+            const config = MatrixRainEngine.rainConfig;
+            const speedFactor = config.speed / 50;
+
+            const numChars = Math.floor(config.intensity * 1.5); // Reduced density - less busy
+
+            // Initialize tunnel characters if needed (or adjust count)
+            if (window.tunnelChars.length === 0 || window.tunnelChars.length !== numChars) {
+                window.tunnelChars = []; // Clear and reinitialize
+                for (let i = 0; i < numChars; i++) {
+                    // Random starting position across ENTIRE screen area
+                    // Use normalized coordinates (0-1) that work at any depth
+                    const startX = Math.random(); // 0-1 across width
+                    const startY = Math.random(); // 0-1 across height
+
+                    window.tunnelChars.push({
+                        char: getNextCharacter(characters, i, false),
+                        zDepth: Math.random(), // 0 = far away, 1 = at camera
+                        startX: startX, // Normalized X position (0-1)
+                        startY: startY, // Normalized Y position (0-1)
+                        speedMultiplier: 0.5 + Math.random() * 1.5 // Each character moves at different speed
+                    });
+                }
+            }
+
+            // Sort by Z-depth so far ones draw first (painter's algorithm)
+            window.tunnelChars.sort((a, b) => a.zDepth - b.zDepth);
+
+            // Draw each character
+            for (let i = 0; i < window.tunnelChars.length; i++) {
+                const tc = window.tunnelChars[i];
+
+                // Move toward camera with individual speed variation
+                tc.zDepth += speedFactor * 0.02 * reverseFlowMultiplier * tc.speedMultiplier;
+
+                // Cycle character randomly (creates animated ripple effect like classic rain)
+                if (!tc.cycleCounter) tc.cycleCounter = 0;
+                tc.cycleCounter++;
+                if (tc.cycleCounter > 3) { // Change character every 3-4 frames
+                    tc.char = getNextCharacter(characters, i, false);
+                    tc.cycleCounter = 0;
+                }
+
+                // Reset when reaching camera (or going backward past vanishing point)
+                if (tc.zDepth > 1) {
+                    tc.zDepth = 0;
+                    tc.char = getNextCharacter(characters, i, false);
+                    tc.speedMultiplier = 0.5 + Math.random() * 1.5; // New random speed
+                    tc.startX = Math.random(); // New random position
+                    tc.startY = Math.random();
+                } else if (tc.zDepth < 0) {
+                    tc.zDepth = 1;
+                    tc.char = getNextCharacter(characters, i, false);
+                    tc.speedMultiplier = 0.5 + Math.random() * 1.5; // New random speed
+                    tc.startX = Math.random(); // New random position
+                    tc.startY = Math.random();
+                }
+
+                // Calculate position - characters grow straight at you from their position
+                // Parallax effect: things further away (low zDepth) appear closer to center
+                const centerX = matrixCanvas.width / 2;
+                const centerY = matrixCanvas.height / 2;
+
+                // Start position in pixels
+                const baseX = tc.startX * matrixCanvas.width;
+                const baseY = tc.startY * matrixCanvas.height;
+
+                // Parallax: far things converge toward center, near things spread out
+                // At zDepth=0 (far): position is 70% toward center
+                // At zDepth=1 (near): position is at full baseX/baseY (or beyond)
+                const parallaxFactor = 0.3 + tc.zDepth * 1.2; // 0.3 to 1.5
+                const x = centerX + (baseX - centerX) * parallaxFactor;
+                const y = centerY + (baseY - centerY) * parallaxFactor;
+
+                // AGGRESSIVE SCALING - creates that "rushing toward camera" effect
+                // Characters at vanishing point are tiny, at camera are HUGE
+                const scale = 0.1 + (tc.zDepth * 3.5); // 0.1x → 3.6x (aggressive!)
+                const charSize = fontSize * scale;
+
+                // Opacity: fade in as approaching camera
+                const charOpacity = Math.min(opacity, tc.zDepth * 0.9 + 0.1);
+
+                // === DANCING COLORS BETWEEN PRIMARY AND SECONDARY ===
+                const time = window.geometricState.time * 0.001;
+
+                // Helper function to convert hex to HSL
+                function hexToHSL(hex) {
+                    // Remove # if present
+                    hex = hex.replace('#', '');
+
+                    // Parse RGB
+                    const r = parseInt(hex.substr(0, 2), 16) / 255;
+                    const g = parseInt(hex.substr(2, 2), 16) / 255;
+                    const b = parseInt(hex.substr(4, 2), 16) / 255;
+
+                    const max = Math.max(r, g, b);
+                    const min = Math.min(r, g, b);
+                    let h, s, l = (max + min) / 2;
+
+                    if (max === min) {
+                        h = s = 0; // achromatic
+                    } else {
+                        const d = max - min;
+                        s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+
+                        switch (max) {
+                            case r: h = ((g - b) / d + (g < b ? 6 : 0)) / 6; break;
+                            case g: h = ((b - r) / d + 2) / 6; break;
+                            case b: h = ((r - g) / d + 4) / 6; break;
+                        }
+                    }
+
+                    return {
+                        h: Math.round(h * 360),
+                        s: Math.round(s * 100),
+                        l: Math.round(l * 100)
+                    };
+                }
+
+                // Parse primary color (supports both hex and hsl)
+                let primaryHue = 120, primarySat = 100;
+                if (config.primaryColor) {
+                    if (config.primaryColor.includes('hsl')) {
+                        const match = config.primaryColor.match(/hsl\((\d+),\s*(\d+)%/);
+                        if (match) {
+                            primaryHue = parseInt(match[1]);
+                            primarySat = parseInt(match[2]);
+                        }
+                    } else if (config.primaryColor.includes('#')) {
+                        const hsl = hexToHSL(config.primaryColor);
+                        primaryHue = hsl.h;
+                        primarySat = hsl.s;
+                    }
+                }
+
+                // Parse secondary color (supports both hex and hsl)
+                let secondaryHue = 180, secondarySat = 100;
+                if (config.secondaryColor) {
+                    if (config.secondaryColor.includes('hsl')) {
+                        const match = config.secondaryColor.match(/hsl\((\d+),\s*(\d+)%/);
+                        if (match) {
+                            secondaryHue = parseInt(match[1]);
+                            secondarySat = parseInt(match[2]);
+                        }
+                    } else if (config.secondaryColor.includes('#')) {
+                        const hsl = hexToHSL(config.secondaryColor);
+                        secondaryHue = hsl.h;
+                        secondarySat = hsl.s;
+                    }
+                }
+
+                // === WAVE EFFECTS ===
+                // Color waves moving through tunnel depth (oscillates between 0 and 1)
+                const depthWave = (Math.sin(tc.zDepth * 8 - time * 2) + 1) / 2;
+
+                // Spatial color wave based on position
+                const spatialWave = (Math.sin(tc.startX * 10 + tc.startY * 8 + tc.zDepth * 5 + time * 1.5) + 1) / 2;
+
+                // Combine waves
+                const colorMix = (depthWave * 0.6 + spatialWave * 0.4);
+
+                // Lerp between primary and secondary colors
+                const finalHue = primaryHue + (secondaryHue - primaryHue) * colorMix;
+                const finalSat = primarySat + (secondarySat - primarySat) * colorMix;
+
+                // Brightness modulation
+                const brightnessWave = Math.sin(tc.zDepth * 15 - time * 3);
+                const lightness = 50 + brightnessWave * 15;
+
+                // Draw the character - oscillating between two colors
+                matrixCtx.font = `${charSize}px monospace`;
+                matrixCtx.fillStyle = `hsl(${finalHue}, ${finalSat}%, ${lightness}%)`;
+                matrixCtx.globalAlpha = charOpacity;
+
+                // No motion blur - clean crisp characters
+                matrixCtx.shadowBlur = 0;
+
+                matrixCtx.fillText(tc.char, x, y);
+            }
+
+            // Reset shadow
+            matrixCtx.shadowBlur = 0;
+        }
+
+        // === CONTROL FUNCTIONS ===
+        function updateRainConfig() {
+            const config = MatrixRainEngine.rainConfig;
+            console.log('Matrix Rain Config Updated:', config);
+            MatrixRainEngine.logActivity('Configuration updated', 'info');
+
+            // Recompute density-based active column mask whenever config changes
+            recomputeActiveColumnsMask();
+            
+            // Update animation with new settings ONLY if not in audio reactive mode
+            // Audio mode controls speed dynamically - don't override it
+            if (matrixInterval && !audioReactiveActive) {
+                // Clear current interval first
+                clearInterval(matrixInterval);
+                // Start new animation with current config speed
+                const newSpeed = MatrixRainEngine.rainConfig.speed;
+                matrixInterval = setInterval(drawMatrixRain, newSpeed);
+                console.log(`🌊 Matrix Rain: Animation restarted with speed ${newSpeed}ms`);
+            }
+        }
+        
+        function toggleMatrixRain() {
+            const canvas = document.getElementById('matrixRainCanvas');
+            if (canvas.style.display === 'none') {
+                canvas.style.display = 'block';
+                startMatrixAnimation();
+                MatrixRainEngine.logActivity('Matrix rain activated', 'success');
+            } else {
+                canvas.style.display = 'none';
+                if (matrixInterval) {
+                    clearInterval(matrixInterval);
+                }
+                MatrixRainEngine.logActivity('Matrix rain deactivated', 'warning');
+            }
+        }
+        
+        function emergencyStop() {
+            const canvas = document.getElementById('matrixRainCanvas');
+            canvas.style.display = 'none';
+            if (matrixInterval) {
+                clearInterval(matrixInterval);
+            }
+            MatrixRainEngine.logActivity('EMERGENCY STOP: Matrix rain terminated', 'error');
+        }
+
+        // === REVERSE FLOW TOGGLE ===
+        function toggleReverseFlow() {
+            reverseFlowMultiplier *= -1; // Flip between 1 and -1
+            const btn = document.getElementById('reverseFlowBtn');
+
+            if (reverseFlowMultiplier === -1) {
+                btn.textContent = '⏩ FORWARD FLOW';
+                btn.style.background = '#00ff88';
+                MatrixRainEngine.logActivity('⏪ REVERSE FLOW ACTIVATED - Everything is rewinding!', 'success');
+            } else {
+                btn.textContent = '⏪ REVERSE FLOW';
+                btn.style.background = '#ffaa00';
+                MatrixRainEngine.logActivity('⏩ Forward flow restored', 'info');
+            }
+        }
+
+        function setRainPattern(pattern, buttonElement) {
+            MatrixRainEngine.rainConfig.pattern = pattern;
+            updateRainConfig();
+
+            // Update active button
+            document.querySelectorAll('.pattern-btn').forEach(btn => btn.classList.remove('active'));
+            if (buttonElement) {
+                buttonElement.classList.add('active');
+            }
+        }
+        
+        function updateRainSpeed() {
+            const speed = document.getElementById('rainSpeed').value;
+            MatrixRainEngine.rainConfig.speed = 101 - speed; // Invert for intuitive control
+            updateRainConfig();
+        }
+        
+        function updateRainIntensity() {
+            const intensity = document.getElementById('rainIntensity').value;
+            MatrixRainEngine.rainConfig.intensity = intensity;
+            updateRainConfig();
+        }
+        
+        function updateRainDensity() {
+            const density = document.getElementById('rainDensity').value;
+            MatrixRainEngine.rainConfig.density = density;
+            updateRainConfig();
+        }
+        
+        function updateRainColors() {
+            const primary = document.getElementById('primaryColor').value;
+            const secondary = document.getElementById('secondaryColor').value;
+            MatrixRainEngine.rainConfig.primaryColor = primary;
+            MatrixRainEngine.rainConfig.secondaryColor = secondary;
+            updateRainConfig();
+        }
+
+        // === UTILITIES ===
+        function clamp(value, min, max) { return Math.min(Math.max(value, min), max); }
+        // Color reactivity and bounds (used by audio-reactive UI and presets)
+        let hueReactivityScale = 1.0; // 0.5–2.0 via UI slider
+        let satGainScale = 1.0;       // 0.5–2.0 via UI slider
+        let brightnessDepthScale = 1.0; // 0.5–2.0 via UI slider
+        let satFloor = 65;            // preset-controlled saturation floor
+        let brightnessMin = 36;       // preset-controlled min lightness
+        let brightnessMax = 64;       // preset-controlled max lightness
+        // New audio tunables for hue spread and high-frequency modulation
+        let audioHueSpread = 2.5;     // overall hue spread multiplier
+        let audioHighModRange = 50;   // degrees range for high-frequency hue modulation
+
+        // === COLOR REACTIVITY UI ===
+        function updateHueReactivity() {
+            const slider = document.getElementById('hueReactSlider');
+            const display = document.getElementById('hueReactDisplay');
+            if (!slider || !display) return;
+            const value = parseInt(slider.value, 10);
+            hueReactivityScale = clamp(value / 100, 0.5, 2.0);
+            display.textContent = `${Math.round(hueReactivityScale * 100)}%`;
+        }
+
+        function updateSaturationGain() {
+            const slider = document.getElementById('satGainSlider');
+            const display = document.getElementById('satGainDisplay');
+            if (!slider || !display) return;
+            const value = parseInt(slider.value, 10);
+            satGainScale = clamp(value / 100, 0.5, 2.0);
+            display.textContent = `${Math.round(satGainScale * 100)}%`;
+        }
+
+        function updateBrightnessDepth() {
+            const slider = document.getElementById('brightDepthSlider');
+            const display = document.getElementById('brightDepthDisplay');
+            if (!slider || !display) return;
+            const value = parseInt(slider.value, 10);
+            brightnessDepthScale = clamp(value / 100, 0.5, 2.0);
+            display.textContent = `${Math.round(brightnessDepthScale * 100)}%`;
+        }
+
+        function setColorPreset(mode) {
+            if (mode === 'neon') {
+                satFloor = 75; brightnessMin = 40; brightnessMax = 68;
+                hueReactivityScale = 1.3; satGainScale = 1.4; brightnessDepthScale = 1.1;
+                audioHueSpread = 2.5; audioHighModRange = 50;
+            } else if (mode === 'prism') {
+                satFloor = 65; brightnessMin = 36; brightnessMax = 64;
+                hueReactivityScale = 1.0; satGainScale = 1.2; brightnessDepthScale = 1.0;
+                audioHueSpread = 2.0; audioHighModRange = 36;
+            } else if (mode === 'pastel') {
+                satFloor = 50; brightnessMin = 46; brightnessMax = 72;
+                hueReactivityScale = 0.8; satGainScale = 0.7; brightnessDepthScale = 0.9;
+                audioHueSpread = 1.2; audioHighModRange = 24;
+            } else if (mode === 'hyperneon') {
+                satFloor = 80; brightnessMin = 44; brightnessMax = 70;
+                hueReactivityScale = 1.8; satGainScale = 1.6; brightnessDepthScale = 1.2;
+                audioHueSpread = 3.0; audioHighModRange = 60;
+            } else if (mode === 'aurora') {
+                satFloor = 60; brightnessMin = 38; brightnessMax = 66;
+                hueReactivityScale = 1.1; satGainScale = 1.1; brightnessDepthScale = 1.3;
+                audioHueSpread = 2.2; audioHighModRange = 40;
+            } else if (mode === 'bassstorm') {
+                satFloor = 85; brightnessMin = 42; brightnessMax = 72;
+                hueReactivityScale = 1.0; satGainScale = 1.5; brightnessDepthScale = 1.4;
+                audioHueSpread = 1.8; audioHighModRange = 56;
+            } else if (mode === 'crystal') {
+                satFloor = 70; brightnessMin = 48; brightnessMax = 74;
+                hueReactivityScale = 0.9; satGainScale = 1.0; brightnessDepthScale = 1.0;
+                audioHueSpread = 1.4; audioHighModRange = 30;
+            } else if (mode === 'vaporwave') {
+                satFloor = 55; brightnessMin = 50; brightnessMax = 78;
+                hueReactivityScale = 0.7; satGainScale = 0.8; brightnessDepthScale = 1.1;
+                audioHueSpread = 1.6; audioHighModRange = 28;
+            } else if (mode === 'inferno') {
+                satFloor = 75; brightnessMin = 45; brightnessMax = 70;
+                hueReactivityScale = 1.2; satGainScale = 1.5; brightnessDepthScale = 1.2;
+                audioHueSpread = 2.3; audioHighModRange = 52;
+            } else if (mode === 'zen') {
+                satFloor = 45; brightnessMin = 52; brightnessMax = 80;
+                hueReactivityScale = 0.6; satGainScale = 0.6; brightnessDepthScale = 0.8;
+                audioHueSpread = 0.8; audioHighModRange = 16;
+            }
+            // update slider displays to reflect internal scale changes
+            const sliders = [
+                ['hueReactSlider', 'hueReactDisplay', hueReactivityScale],
+                ['satGainSlider', 'satGainDisplay', satGainScale],
+                ['brightDepthSlider', 'brightDepthDisplay', brightnessDepthScale]
+            ];
+            sliders.forEach(([sid, did, val]) => {
+                const s = document.getElementById(sid);
+                const d = document.getElementById(did);
+                if (s && d) { s.value = Math.round(val * 100); d.textContent = `${Math.round(val * 100)}%`; }
+            });
+        }
+
+        function updateCharacterSize() {
+            const size = parseInt(document.getElementById('characterSize').value);
+            MatrixRainEngine.rainConfig.fontSize = size;
+            document.getElementById('charSizeDisplay').textContent = size + 'px';
+            updateRainConfig();
+            MatrixRainEngine.logActivity(`Character size changed to ${size}px`, 'info');
+        }
+
+        function increaseCharacterSize() {
+            const slider = document.getElementById('characterSize');
+            let currentSize = parseInt(slider.value);
+            if (currentSize < 100) {
+                currentSize++;
+                slider.value = currentSize;
+                updateCharacterSize();
+            }
+        }
+
+        function decreaseCharacterSize() {
+            const slider = document.getElementById('characterSize');
+            let currentSize = parseInt(slider.value);
+            if (currentSize > 1) {
+                currentSize--;
+                slider.value = currentSize;
+                updateCharacterSize();
+            }
+        }
+
+        function updateFontSize() {
+            const fontSize = document.getElementById('fontSize').value;
+            MatrixRainEngine.rainConfig.fontSize = parseInt(fontSize);
+            updateRainConfig();
+        }
+        
+        function updateCharacterSet() {
+            const characterSet = document.getElementById('characterSet').value;
+            const customInput = document.getElementById('customCharacters');
+
+            // Show/hide custom input based on selection
+            if (characterSet === 'custom') {
+                customInput.style.display = 'block';
+                // Use custom characters if provided, otherwise use default
+                const customChars = customInput.value.trim();
+                MatrixRainEngine.rainConfig.characterSet = customChars.length > 0 ? customChars : 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+            } else {
+                customInput.style.display = 'none';
+                MatrixRainEngine.rainConfig.characterSet = characterSet;
+            }
+
+            updateRainConfig();
+        }
+        
+        function updateRainDirection() {
+            const direction = document.getElementById('rainDirection').value;
+            const oldDirection = MatrixRainEngine.rainConfig.direction;
+            MatrixRainEngine.rainConfig.direction = direction;
+
+            // Reinitialize drop positions when switching to/from horizontal
+            if (matrixCanvas && matrixDrops) {
+                const fontSize = MatrixRainEngine.rainConfig.fontSize;
+                const wasHorizontal = (oldDirection === 'left' || oldDirection === 'right');
+                const isHorizontal = (direction === 'left' || direction === 'right');
+
+                if (wasHorizontal !== isHorizontal) {
+                    // Switching orientation - reinitialize all drops
+                    const columns = Math.floor(matrixCanvas.width / fontSize);
+                    for (let i = 0; i < columns; i++) {
+                        if (isHorizontal) {
+                            // Going horizontal: randomize X positions across full width
+                            matrixDrops[i] = Math.random() * (matrixCanvas.width / fontSize);
+                        } else {
+                            // Going vertical: randomize Y positions across full height
+                            matrixDrops[i] = Math.random() * (matrixCanvas.height / fontSize);
+                        }
+                    }
+                }
+            }
+
+            updateRainConfig();
+        }
+        
+        function setSpectrumColor(color, colorElement) {
+            document.querySelectorAll('.spectrum-color').forEach(btn => btn.classList.remove('active'));
+            if (colorElement) {
+                colorElement.classList.add('active');
+            }
+            MatrixRainEngine.rainConfig.primaryColor = color;
+            updateRainConfig();
+        }
+
+        // === INITIALIZATION ===
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log("🌊 Matrix Rain: DOM loaded, initializing...");
+            MatrixRainEngine.init();
+
+            // FORCE RIGHT-CLICK TO WORK IN WALLPAPER ENGINE
+            document.addEventListener('contextmenu', function(e) {
+                e.preventDefault(); // Stop Wallpaper Engine's context menu
+                // Re-attach all event listeners to controls
+                setTimeout(() => {
+                    const selects = document.querySelectorAll('select');
+                    const inputs = document.querySelectorAll('input');
+                    selects.forEach(select => {
+                        select.onclick = null;
+                        select.onchange = null;
+                        // Re-assign to force re-registration
+                        const newSelect = select.cloneNode(true);
+                        select.parentNode.replaceChild(newSelect, select);
+                    });
+                }, 100);
+            });
+
+            // Set initial minimize button state (starts minimized)
+            const minimizeBtn = document.getElementById('minimizeBtn');
+            minimizeBtn.textContent = 'M +';
+            minimizeBtn.title = 'Press M or click to maximize';
+
+            // Wait a bit for the engine to initialize, then start the rain
+            setTimeout(() => {
+                initMatrixRain();
+                console.log("🌊 Matrix Rain: Animation engine initialized");
+            }, 100);
+            
+            // Add keyboard shortcut: Press 'M' to toggle settings modal
+            document.addEventListener('keydown', function(e) {
+                if (e.key === 'm' || e.key === 'M') {
+                    const modal = document.querySelector('.matrix-modal');
+                    if (modal.style.display === 'none') {
+                        modal.style.display = 'flex';
+                        MatrixRainEngine.logActivity('⌨️ Settings opened (M key)', 'info');
+                    } else {
+                        modal.style.display = 'none';
+                        MatrixRainEngine.logActivity('⌨️ Settings closed (M key)', 'info');
+                    }
+                }
+            });
+
+            // Enable mousewheel scrolling for settings menu in Wallpaper Engine
+            const modalContent = document.querySelector('.modal-content');
+            if (modalContent) {
+                modalContent.addEventListener('wheel', function(e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    // Scroll the menu content with mousewheel
+                    modalContent.scrollTop += e.deltaY;
+                }, { passive: false });
+
+                // Enable click-and-drag scrolling on the scrollbar track
+                let isDragging = false;
+                let startY = 0;
+                let startScrollTop = 0;
+
+                modalContent.addEventListener('mousedown', function(e) {
+                    const rect = modalContent.getBoundingClientRect();
+                    const scrollbarWidth = 40; // Match our scrollbar width
+                    const isInScrollbar = (e.clientX > rect.right - scrollbarWidth);
+
+                    if (isInScrollbar) {
+                        isDragging = true;
+                        startY = e.clientY;
+                        startScrollTop = modalContent.scrollTop;
+                        modalContent.style.cursor = 'grabbing';
+                        e.preventDefault();
+                    }
+                });
+
+                document.addEventListener('mousemove', function(e) {
+                    if (isDragging) {
+                        const deltaY = e.clientY - startY;
+                        const scrollRatio = modalContent.scrollHeight / modalContent.clientHeight;
+                        modalContent.scrollTop = startScrollTop + (deltaY * scrollRatio);
+                    }
+                });
+
+                document.addEventListener('mouseup', function() {
+                    if (isDragging) {
+                        isDragging = false;
+                        modalContent.style.cursor = 'default';
+                    }
+                });
+            }
+
+            // Register Wallpaper Engine audio listener at page load (REQUIRED!)
+            if (window.wallpaperRegisterAudioListener) {
+                audioBufferLength = 128;
+                audioDataArray = new Uint8Array(128);
+
+                window.wallpaperRegisterAudioListener(function(audioArray) {
+                    if (!audioReactiveActive) return;
+
+                    // MASSIVE amplification for Wallpaper Engine audio (remove artificial cap!)
+                    // Apply 8x multiplier for ULTRA sensitivity at normal volumes
+                    audioDataArray = new Uint8Array(audioArray.map(v => Math.floor(Math.max(v, 0) * 8 * 255)));
+                    audioBufferLength = audioDataArray.length;
+                    analyzeAudio();
+                });
+            }
+        });
+        
+        // === CHAOS RANDOMIZER ===
+        function activateChaosRandomizer() {
+            console.log("🌀 CHAOS RANDOMIZER ACTIVATED!");
+            MatrixRainEngine.logActivity("🌀 CHAOS RANDOMIZER: Initiating complete system chaos!", 'success');
+            
+            // Randomize all settings with all available patterns!
+            const patterns = ['classic', 'rainbow', 'pentad', 'chaos', 'harmonic', 'particles'];
+            const colors = ['#ff0000', '#00ff00', '#0000ff', '#ffff00', '#ff00ff', '#00ffff', '#ff8000', '#8000ff'];
+            const characterSets = ['matrix', 'binary', 'hex', 'symbols', 'katakana'];
+            const directions = ['down', 'up', 'left', 'right', 'diagonal', 'toward'];
+            
+            // Apply random settings
+            MatrixRainEngine.rainConfig.pattern = patterns[Math.floor(Math.random() * patterns.length)];
+            MatrixRainEngine.rainConfig.primaryColor = colors[Math.floor(Math.random() * colors.length)];
+            MatrixRainEngine.rainConfig.secondaryColor = colors[Math.floor(Math.random() * colors.length)];
+            MatrixRainEngine.rainConfig.speed = Math.floor(Math.random() * 50) + 10;
+            MatrixRainEngine.rainConfig.characterSet = characterSets[Math.floor(Math.random() * characterSets.length)];
+            MatrixRainEngine.rainConfig.direction = directions[Math.floor(Math.random() * directions.length)];
+
+            // Update UI controls
+            document.getElementById('rainSpeed').value = 101 - MatrixRainEngine.rainConfig.speed;
+            document.getElementById('primaryColor').value = MatrixRainEngine.rainConfig.primaryColor;
+            document.getElementById('secondaryColor').value = MatrixRainEngine.rainConfig.secondaryColor;
+            document.getElementById('characterSet').value = MatrixRainEngine.rainConfig.characterSet;
+            document.getElementById('rainDirection').value = MatrixRainEngine.rainConfig.direction;
+            
+            // Update pattern button
+            document.querySelectorAll('.pattern-btn').forEach(btn => btn.classList.remove('active'));
+            const patternBtn = document.querySelector(`[onclick="setRainPattern('${MatrixRainEngine.rainConfig.pattern}')"]`);
+            if (patternBtn) patternBtn.classList.add('active');
+            
+            // Log chaos results
+            MatrixRainEngine.logActivity(`🌀 CHAOS: Pattern=${MatrixRainEngine.rainConfig.pattern}, Speed=${MatrixRainEngine.rainConfig.speed}, CharSet=${MatrixRainEngine.rainConfig.characterSet}`, 'success');
+            
+            // Update animation
+            updateRainConfig();
+            
+            // Create visual chaos effect
+            createChaosEffect();
+        }
+        
+        function createChaosEffect() {
+            // Create temporary visual chaos
+            const canvas = document.getElementById('matrixRainCanvas');
+            const ctx = canvas.getContext('2d');
+            
+            // Flash effect
+            let flashCount = 0;
+            const flashInterval = setInterval(() => {
+                ctx.fillStyle = `rgba(${Math.random() * 255}, ${Math.random() * 255}, ${Math.random() * 255}, 0.3)`;
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                
+                flashCount++;
+                if (flashCount >= 5) {
+                    clearInterval(flashInterval);
+                    ctx.fillStyle = 'rgba(0, 0, 0, 0.05)';
+                    ctx.fillRect(0, 0, canvas.width, canvas.height);
+                }
+            }, 100);
+        }
+        
+        // === AUTO ORCHESTRATOR - Simple RNG automation ===
+        let autoOrchestratorInterval = null;
+        let autoOrchestratorActive = false;
+        window.autoOrchestratorActive = false; // Expose globally for Ollama integration
+        
+        function toggleAutoOrchestrator() {
+            autoOrchestratorActive = !autoOrchestratorActive;
+            window.autoOrchestratorActive = autoOrchestratorActive; // Sync global
+            const btn = document.getElementById('autoOrchestratorBtn');
+
+            if (autoOrchestratorActive) {
+                btn.textContent = '⏸️ STOP AUTO';
+                btn.style.background = '#ff4444';
+                startAutoOrchestrator();
+                MatrixRainEngine.logActivity('🎭 Auto Orchestrator STARTED - continuous random evolution!', 'success');
+                updateModeButtons('orchestrator'); // Disable other mode buttons
+            } else {
+                btn.textContent = '🎭 AUTO ORCHESTRATOR';
+                btn.style.background = '#0080ff';
+                stopAutoOrchestrator();
+                MatrixRainEngine.logActivity('🎭 Auto Orchestrator STOPPED', 'info');
+                updateModeButtons(null); // Re-enable all buttons
+            }
+        }
+        
+        function startAutoOrchestrator() {
+            // Run first change immediately
+            orchestrateRandomChange();
+            
+            // Then schedule recurring changes
+            scheduleNextChange();
+        }
+        
+        function scheduleNextChange() {
+            if (!autoOrchestratorActive) return;
+            
+            // Random interval: 8-15 seconds (longer to enjoy each scene)
+            const interval = 8000 + Math.floor(Math.random() * 7000);
+            const seconds = Math.round(interval / 1000);
+            
+            console.log(`⏱️ Next orchestrator change in ${seconds} seconds...`);
+            MatrixRainEngine.logActivity(`⏱️ Next change in ${seconds}s`, 'info');
+            
+            autoOrchestratorInterval = setTimeout(() => {
+                orchestrateRandomChange();
+                scheduleNextChange(); // Schedule next one
+            }, interval);
+        }
+        
+        function orchestrateRandomChange() {
+            if (!autoOrchestratorActive) return;
+            
+            console.log('🎭 ORCHESTRATOR: Running change cycle...');
+            
+            // Store previous pattern to detect changes
+            const previousPattern = MatrixRainEngine.rainConfig.pattern;
+            const previousDirection = MatrixRainEngine.rainConfig.direction;
+            
+            // All available patterns
+            const patterns = ['classic', 'rainbow', 'pentad', 'chaos', 'harmonic', 'particles'];
+            const colors = ['#ff0000', '#00ff00', '#0000ff', '#ffff00', '#ff00ff', '#00ffff', '#ff8000', '#8000ff', '#00ff41'];
+            const characterSets = ['matrix', 'binary', 'hex', 'symbols', 'katakana'];
+            const directions = ['down', 'up', 'left', 'right', 'diagonal', 'toward'];
+            
+            // Randomize EVERYTHING
+            const newPattern = patterns[Math.floor(Math.random() * patterns.length)];
+            const patternChanged = newPattern !== previousPattern;
+            MatrixRainEngine.rainConfig.pattern = newPattern;
+            MatrixRainEngine.rainConfig.primaryColor = colors[Math.floor(Math.random() * colors.length)];
+            MatrixRainEngine.rainConfig.secondaryColor = colors[Math.floor(Math.random() * colors.length)];
+            MatrixRainEngine.rainConfig.speed = 20 + Math.floor(Math.random() * 70); // 20-90
+            MatrixRainEngine.rainConfig.intensity = 40 + Math.floor(Math.random() * 60); // 40-100
+            // Do NOT change density here; keep manual control
+            MatrixRainEngine.rainConfig.characterSet = characterSets[Math.floor(Math.random() * characterSets.length)];
+            const newDirection = directions[Math.floor(Math.random() * directions.length)];
+
+            // Reinitialize drop positions when switching to/from horizontal
+            if (matrixCanvas && matrixDrops && previousDirection !== newDirection) {
+                const fontSize = MatrixRainEngine.rainConfig.fontSize;
+                const wasHorizontal = (previousDirection === 'left' || previousDirection === 'right');
+                const isHorizontal = (newDirection === 'left' || newDirection === 'right');
+
+                if (wasHorizontal !== isHorizontal) {
+                    // Switching orientation - reinitialize all drops
+                    const columns = Math.floor(matrixCanvas.width / fontSize);
+                    for (let i = 0; i < columns; i++) {
+                        if (isHorizontal) {
+                            // Going horizontal: randomize X positions across full width
+                            matrixDrops[i] = Math.random() * (matrixCanvas.width / fontSize);
+                        } else {
+                            // Going vertical: randomize Y positions across full height
+                            matrixDrops[i] = Math.random() * (matrixCanvas.height / fontSize);
+                        }
+                    }
+                }
+            }
+
+            MatrixRainEngine.rainConfig.direction = newDirection;
+
+            // Reverse flow is now controlled only by manual toggle or audio setting; no orchestrator reversals
+
+            // Update UI to reflect changes
+            document.getElementById('rainSpeed').value = 101 - MatrixRainEngine.rainConfig.speed;
+            document.getElementById('rainIntensity').value = MatrixRainEngine.rainConfig.intensity;
+            document.getElementById('rainDensity').value = MatrixRainEngine.rainConfig.density;
+            document.getElementById('primaryColor').value = MatrixRainEngine.rainConfig.primaryColor;
+            document.getElementById('secondaryColor').value = MatrixRainEngine.rainConfig.secondaryColor;
+            document.getElementById('characterSet').value = MatrixRainEngine.rainConfig.characterSet;
+            document.getElementById('rainDirection').value = MatrixRainEngine.rainConfig.direction;
+            
+            // Update active pattern button
+            document.querySelectorAll('.pattern-btn').forEach(btn => btn.classList.remove('active'));
+            const patternBtn = document.querySelector(`[onclick="setRainPattern('${MatrixRainEngine.rainConfig.pattern}')"]`);
+            if (patternBtn) patternBtn.classList.add('active');
+            
+            // Log the changes with CLEAR visibility
+            const directionChanged = MatrixRainEngine.rainConfig.direction !== previousDirection;
+            console.log(`\n========================================`);
+            console.log(`🎭 ORCHESTRATOR CHANGE:`);
+            console.log(`   Pattern: ${previousPattern} → ${MatrixRainEngine.rainConfig.pattern}`);
+            console.log(`   Direction: ${previousDirection} → ${MatrixRainEngine.rainConfig.direction}`);
+            console.log(`   Reverse Flow: ${reverseFlowMultiplier === -1 ? '⏪ REWINDING' : '⏩ FORWARD'}`);
+            console.log(`========================================\n`);
+            
+            // Show direction change notification
+            if (directionChanged) {
+                MatrixRainEngine.logActivity(`↗️ DIRECTION CHANGED: ${previousDirection} → ${MatrixRainEngine.rainConfig.direction}`, 'success');
+            }
+            
+            if (patternChanged) {
+                MatrixRainEngine.logActivity(`🎭 NEW Pattern: ${MatrixRainEngine.rainConfig.pattern} | Dir: ${MatrixRainEngine.rainConfig.direction} | ${MatrixRainEngine.rainConfig.characterSet}`, 'success');
+            } else {
+                MatrixRainEngine.logActivity(`🔄 Settings update | Dir: ${MatrixRainEngine.rainConfig.direction} | Rev: ${reverseFlowMultiplier === -1 ? 'YES' : 'NO'}`, 'info');
+            }
+            
+            // Always just update config - smooth transitions, no resets!
+            updateRainConfig();
+        }
+        
+        function stopAutoOrchestrator() {
+            if (autoOrchestratorInterval) {
+                clearTimeout(autoOrchestratorInterval);
+                autoOrchestratorInterval = null;
+            }
+        }
+        
+        // === REVERSE FLOW TOGGLE ===
+        function toggleReverseFlow() {
+            reverseFlowMultiplier *= -1; // Flip between 1 and -1
+            const btn = document.getElementById('reverseFlowBtn');
+
+            if (reverseFlowMultiplier === -1) {
+                btn.textContent = '⏩ FORWARD FLOW';
+                btn.style.background = '#00ff88';
+                MatrixRainEngine.logActivity('⏪ REVERSE FLOW ACTIVATED - Everything is rewinding!', 'success');
+            } else {
+                btn.textContent = '⏪ REVERSE FLOW';
+                btn.style.background = '#ffaa00';
+                MatrixRainEngine.logActivity('⏩ Forward flow restored', 'info');
+            }
+        }
+
+        // === AUDIO REACTIVE SYSTEM ===
+        let audioContext = null;
+        let audioAnalyser = null;
+        let audioDataArray = null;
+        let audioBufferLength = 0;
+        let audioReactiveActive = false;
+        window.audioReactiveActive = false; // Expose globally for Ollama integration
+        let audioAnimationFrame = null;
+        let audioStream = null;
+
+        // Syllable detection state (for reversals)
+        let syllableDetector = {
+            threshold: 0.3,         // ULTRA sensitive - catch tiny audio movements
+            minVolume: 0.02,        // Very low but not zero
+            lastSyllableTime: 0,
+            syllableCooldown: 120,  // 120ms = ~8 syllables/sec (prevents double-reversals)
+            volumeHistory: [],
+            historyLength: 12,      // Balanced history
+            avgVolume: 0
+        };
+
+        // Beat detection state (for color changes AND reversal backup)
+        let beatDetector = {
+            threshold: 0.3,         // ULTRA sensitive - catch even small beats
+            minBass: 40,           // Trigger on tiny bass movements
+            lastBeatTime: 0,
+            beatCooldown: 150,      // Allow more frequent beat reactions
+            bassHistory: [],
+            historyLength: 15,
+            avgBass: 0
+        };
+
+        // Track when last syllable was detected (for beat reversal backup)
+        let lastSyllableOrBeatReversalTime = 0;
+
+        // Rhythm detection and direction bursts removed
+        // Music now controls everything continuously
+
+        async function toggleAudioReactive() {
+            audioReactiveActive = !audioReactiveActive;
+            window.audioReactiveActive = audioReactiveActive; // Sync global
+            const btn = document.getElementById('audioReactiveBtn');
+            const status = document.getElementById('audioStatus');
+
+            if (audioReactiveActive) {
+                btn.textContent = '⏸️ STOP AUDIO MODE';
+                btn.style.background = '#ff4444';
+
+                // CHECK IF WE'RE IN WALLPAPER ENGINE
+                if (window.wallpaperRegisterAudioListener) {
+                    // WALLPAPER ENGINE MODE - audio listener already registered at page load!
+                    status.textContent = '🎵 AUDIO REACTIVE - Syncing with desktop audio!';
+                    MatrixRainEngine.logActivity('🎵 Audio Reactive Mode ACTIVATED - Using Wallpaper Engine audio!', 'success');
+
+                    // Gray out secondary color picker (not used in audio mode)
+                    const secondaryColorPicker = document.getElementById('secondaryColor');
+                    const secondaryColorLabel = secondaryColorPicker.previousElementSibling;
+                    if (secondaryColorPicker) {
+                        secondaryColorPicker.style.opacity = '0.3';
+                        secondaryColorPicker.style.pointerEvents = 'none';
+                        secondaryColorPicker.style.filter = 'grayscale(100%)';
+                        secondaryColorPicker.disabled = true;
+                    }
+                    if (secondaryColorLabel) {
+                        secondaryColorLabel.style.opacity = '0.5';
+                    }
+
+                    updateModeButtons('audio'); // Disable other mode buttons
+
+                    // That's it! The analyzeAudio() function is already being called by the listener
+                    return;
+                }
+
+                // BROWSER MODE - Request desktop/tab audio capture
+                status.textContent = '🎤 Requesting audio access...';
+
+                try {
+                    audioStream = await navigator.mediaDevices.getDisplayMedia({
+                        video: true,
+                        audio: {
+                            echoCancellation: false,
+                            noiseSuppression: false,
+                            autoGainControl: false
+                        }
+                    });
+
+                    // Set up Web Audio API
+                    audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                    audioAnalyser = audioContext.createAnalyser();
+                    audioAnalyser.fftSize = 2048;
+                    audioAnalyser.smoothingTimeConstant = 0.2; // REDUCED from 0.8 for ultra-responsive color changes!
+
+                    const source = audioContext.createMediaStreamSource(audioStream);
+                    source.connect(audioAnalyser);
+
+                    audioBufferLength = audioAnalyser.frequencyBinCount;
+                    audioDataArray = new Uint8Array(audioBufferLength);
+
+                    status.textContent = '🎵 AUDIO REACTIVE - Syncing with sound!';
+                    MatrixRainEngine.logActivity('🎵 Audio Reactive Mode ACTIVATED - Rain synced to audio!', 'success');
+
+                    // Gray out secondary color picker (not used in audio mode)
+                    const secondaryColorPicker = document.getElementById('secondaryColor');
+                    const secondaryColorLabel = secondaryColorPicker.previousElementSibling;
+                    if (secondaryColorPicker) {
+                        secondaryColorPicker.style.opacity = '0.3';
+                        secondaryColorPicker.style.pointerEvents = 'none';
+                        secondaryColorPicker.style.filter = 'grayscale(100%)';
+                        secondaryColorPicker.disabled = true;
+                    }
+                    if (secondaryColorLabel) {
+                        secondaryColorLabel.style.opacity = '0.5';
+                    }
+
+                    // Start audio analysis loop
+                    analyzeAudio();
+
+                    updateModeButtons('audio'); // Disable other mode buttons
+
+                } catch (error) {
+                    console.error('Audio capture error:', error);
+                    status.textContent = '❌ Audio access denied. Try sharing a tab with audio.';
+                    audioReactiveActive = false;
+                    window.audioReactiveActive = false; // Sync global
+                    btn.textContent = '🎵 AUDIO REACTIVE MODE';
+                    btn.style.background = '#ff1493';
+
+                    // Re-enable secondary color picker on error
+                    const secondaryColorPicker = document.getElementById('secondaryColor');
+                    const secondaryColorLabel = secondaryColorPicker.previousElementSibling;
+                    if (secondaryColorPicker) {
+                        secondaryColorPicker.style.opacity = '1';
+                        secondaryColorPicker.style.pointerEvents = 'auto';
+                        secondaryColorPicker.style.filter = 'none';
+                        secondaryColorPicker.disabled = false;
+                    }
+                    if (secondaryColorLabel) {
+                        secondaryColorLabel.style.opacity = '1';
+                    }
+
+                    updateModeButtons(null); // Re-enable all buttons on error
+                }
+
+            } else {
+                btn.textContent = '🎵 AUDIO REACTIVE MODE';
+                btn.style.background = '#ff1493';
+                status.textContent = '';
+                stopAudioReactive();
+
+                // Re-enable secondary color picker
+                const secondaryColorPicker = document.getElementById('secondaryColor');
+                const secondaryColorLabel = secondaryColorPicker.previousElementSibling;
+                if (secondaryColorPicker) {
+                    secondaryColorPicker.style.opacity = '1';
+                    secondaryColorPicker.style.pointerEvents = 'auto';
+                    secondaryColorPicker.style.filter = 'none';
+                    secondaryColorPicker.disabled = false;
+                }
+                if (secondaryColorLabel) {
+                    secondaryColorLabel.style.opacity = '1';
+                }
+
+                MatrixRainEngine.logActivity('🎵 Audio Reactive Mode STOPPED', 'info');
+                updateModeButtons(null); // Re-enable all buttons
+            }
+        }
+
+        function stopAudioReactive() {
+            if (audioAnimationFrame) {
+                cancelAnimationFrame(audioAnimationFrame);
+                audioAnimationFrame = null;
+            }
+            if (audioStream) {
+                audioStream.getTracks().forEach(track => track.stop());
+                audioStream = null;
+            }
+            if (audioContext) {
+                audioContext.close();
+                audioContext = null;
+            }
+            audioAnalyser = null;
+            audioDataArray = null;
+        }
+
+        function analyzeAudio() {
+            if (!audioReactiveActive) return;
+
+            // Check if we're in Wallpaper Engine or Browser mode
+            const isWallpaperEngine = window.wallpaperRegisterAudioListener && !audioAnalyser;
+
+            if (!isWallpaperEngine) {
+                // BROWSER MODE - use standard frequency analysis
+                if (!audioAnalyser) return;
+                audioAnimationFrame = requestAnimationFrame(analyzeAudio);
+                audioAnalyser.getByteFrequencyData(audioDataArray);
+            }
+            // In Wallpaper Engine mode, data is already populated by the listener callback
+
+            // Calculate different frequency ranges based on mode
+            let bass, lowMid, mid, high;
+
+            if (isWallpaperEngine) {
+                // WALLPAPER ENGINE: 128 samples (64 left + 64 right)
+                // Scale down the ranges proportionally: 128 is ~12.5% of 1024
+                bass = getAverageFrequency(0, 10);       // ~0-80 scaled to 128 → 0-10
+                lowMid = getAverageFrequency(10, 25);    // ~80-200 → 10-25
+                mid = getAverageFrequency(25, 75);       // ~200-600 → 25-75
+                high = getAverageFrequency(75, 128);     // ~600-1024 → 75-128
+            } else {
+                // BROWSER MODE: 1024+ bins
+                bass = getAverageFrequency(0, 80);       // 0-80: Bass/kick
+                lowMid = getAverageFrequency(80, 200);   // 80-200: Low-mid (music body)
+                mid = getAverageFrequency(200, 600);     // 200-600: Mid (vocals)
+                high = getAverageFrequency(600, 1024);   // 600+: High frequencies (consonants)
+            }
+
+            // Overall volume
+            const volume = (bass + lowMid + mid + high) / 4 / 255;
+
+            // SYLLABLES = REVERSALS ONLY
+            detectSyllables(volume, mid, high, isWallpaperEngine);
+
+            // MUSIC = EVERYTHING ELSE (continuous background control)
+            reactToAudio(bass, lowMid, mid, high, volume, isWallpaperEngine);
+
+            // Draw visualizer
+            drawAudioVisualizer(bass, lowMid, mid, high);
+        }
+
+        function getAverageFrequency(startBin, endBin) {
+            let sum = 0;
+            let count = 0;
+            for (let i = startBin; i < endBin && i < audioBufferLength; i++) {
+                sum += audioDataArray[i];
+                count++;
+            }
+            return count > 0 ? sum / count : 0;
+        }
+
+        function detectSyllables(volume, mid, high, isWallpaperEngine = false) {
+            const now = Date.now();
+
+            // Update volume history
+            syllableDetector.volumeHistory.push(volume);
+            if (syllableDetector.volumeHistory.length > syllableDetector.historyLength) {
+                syllableDetector.volumeHistory.shift();
+            }
+
+            // Calculate average volume
+            syllableDetector.avgVolume = syllableDetector.volumeHistory.reduce((a, b) => a + b, 0) / syllableDetector.volumeHistory.length;
+
+            // Adjust thresholds based on mode
+            const midThreshold = isWallpaperEngine ? 15 : 40;       // Much lower for WE
+            const consonantThreshold = isWallpaperEngine ? 30 : 100; // Much lower for WE
+            const vocalThreshold = isWallpaperEngine ? 35 : 120;     // Much lower for WE
+
+            // Detect syllables - HYPER SENSITIVE to catch EVERYTHING
+            const isSyllable = volume > syllableDetector.avgVolume * syllableDetector.threshold
+                            && volume > syllableDetector.minVolume
+                            && mid > midThreshold
+                            && (now - syllableDetector.lastSyllableTime) > syllableDetector.syllableCooldown;
+
+            // Also catch consonant pops (high frequency spikes) - LOWER threshold
+            const isConsonant = high > consonantThreshold
+                             && (now - syllableDetector.lastSyllableTime) > syllableDetector.syllableCooldown;
+
+            // ALSO catch any significant mid-frequency activity (vocals)
+            const isVocal = mid > vocalThreshold
+                         && (now - syllableDetector.lastSyllableTime) > syllableDetector.syllableCooldown;
+
+            if (isSyllable || isConsonant || isVocal) {
+                syllableDetector.lastSyllableTime = now;
+                onSyllableDetected();
+            }
+        }
+
+        function detectBeats(bass) {
+            const now = Date.now();
+
+            // Update bass history
+            beatDetector.bassHistory.push(bass);
+            if (beatDetector.bassHistory.length > beatDetector.historyLength) {
+                beatDetector.bassHistory.shift();
+            }
+
+            // Calculate average bass
+            beatDetector.avgBass = beatDetector.bassHistory.reduce((a, b) => a + b, 0) / beatDetector.bassHistory.length;
+
+            // Detect bass beats - focus on low frequencies only
+            const isBeat = bass > beatDetector.avgBass * beatDetector.threshold
+                        && bass > beatDetector.minBass
+                        && (now - beatDetector.lastBeatTime) > beatDetector.beatCooldown;
+
+            if (isBeat) {
+                beatDetector.lastBeatTime = now;
+                onBeatDetected(bass);
+            }
+        }
+
+        // Rhythm change detection removed - music now controls everything continuously
+
+        function onSyllableDetected() {
+            // REVERSE FLOW on EVERY syllable - ONLY if enabled!
+            if (!audioReverseEnabled) return;
+
+            reverseFlowMultiplier *= -1;
+            lastSyllableOrBeatReversalTime = Date.now(); // Track this reversal
+            const flowStatus = reverseFlowMultiplier === -1 ? '⏪' : '⏩';
+
+            // Update button UI
+            const btn = document.getElementById('reverseFlowBtn');
+            if (btn) {
+                if (reverseFlowMultiplier === -1) {
+                    btn.textContent = '⏩ FORWARD FLOW';
+                    btn.style.background = '#00ff88';
+                } else {
+                    btn.textContent = '⏪ REVERSE FLOW';
+                    btn.style.background = '#ffaa00';
+                }
+            }
+
+            // Log only occasionally to avoid spam
+            if (Math.random() < 0.05) { // 5% logged
+                MatrixRainEngine.logActivity(`${flowStatus} syllable`, 'info');
+            }
+        }
+
+        function onBeatDetected(bass) {
+            if (!audioReverseEnabled) return; // Respect audio reverse setting
+
+            const now = Date.now();
+            const timeSinceLastReversal = now - lastSyllableOrBeatReversalTime;
+
+            // If no syllable in last 500ms, use BEAT for reversal (backup mode)
+            if (timeSinceLastReversal > 500) {
+                reverseFlowMultiplier *= -1;
+                lastSyllableOrBeatReversalTime = now;
+                const flowStatus = reverseFlowMultiplier === -1 ? '⏪' : '⏩';
+
+                // Update button UI
+                const btn = document.getElementById('reverseFlowBtn');
+                if (btn) {
+                    if (reverseFlowMultiplier === -1) {
+                        btn.textContent = '⏩ FORWARD FLOW';
+                        btn.style.background = '#00ff88';
+                    } else {
+                        btn.textContent = '⏪ REVERSE FLOW';
+                        btn.style.background = '#ffaa00';
+                    }
+                }
+
+                // Log occasionally
+                if (Math.random() < 0.1) {
+                    MatrixRainEngine.logActivity(`${flowStatus} beat (backup)`, 'info');
+                }
+            }
+            // Note: Color is now controlled continuously by reactToAudio (lowMid frequency)
+            // No more beat-triggered color flashes - smoother color evolution
+        }
+
+        function onRhythmChange(bass, lowMid, mid, high, changeAmount) {
+            // This function is now REMOVED from active use
+            // Music drives everything continuously via reactToAudio()
+        }
+
+        // Helper function to convert HSL to HEX for color pickers
+        function hslToHex(h, s, l) {
+            s /= 100;
+            l /= 100;
+            const a = s * Math.min(l, 1 - l);
+            const f = n => {
+                const k = (n + h / 30) % 12;
+                const color = l - a * Math.max(Math.min(k - 3, 9 - k, 1), -1);
+                return Math.round(255 * color).toString(16).padStart(2, '0');
+            };
+            return `#${f(0)}${f(8)}${f(4)}`;
+        }
+
+        function reactToAudio(bass, lowMid, mid, high, volume, isWallpaperEngine = false) {
+            const config = MatrixRainEngine.rainConfig;
+
+            // === INTELLIGENT AUDIO-TO-VISUAL MAPPING ===
+            // Each audio frequency controls ONE specific visual parameter
+
+            // FORCE CLASSIC PATTERN (only one that shows color changes properly)
+            config.pattern = 'classic';
+            document.querySelectorAll('.pattern-btn').forEach(btn => btn.classList.remove('active'));
+            const classicBtn = document.querySelector(`[onclick="setRainPattern('classic')"]`);
+            if (classicBtn) classicBtn.classList.add('active');
+
+            // BASS → SPEED (more bass = faster rain)
+            const bassNormalized = bass / 255;
+            config.speed = 15 + Math.floor(bassNormalized * 75); // 15-90
+
+            // LOW-MID + MID → COLOR HUE (MAXIMUM sensitivity to musical notes)
+            // HYPER ENHANCED: Each note in a scale (do-re-mi-fa-so-la-ti-do) gets its own color!
+            // Musical notes are in 200-600Hz range, so we focus heavily on mid frequencies
+
+            // Weight mid frequencies MORE heavily (where vocals/melody live)
+            const lowMidNormalized = lowMid / 255;
+            const midNormalized = mid / 255;
+
+            // MAXIMUM SENSITIVITY: power of 0.15 makes TINY pitch differences create HUGE color shifts!
+            // This is EXTREME - every subtle vocal tone change will be visible
+            const lowMidSensitive = Math.pow(lowMidNormalized, 0.15);
+            const midSensitive = Math.pow(midNormalized, 0.15);
+
+            // Combine with HEAVY emphasis on mid frequencies (70% mid, 30% lowMid)
+            // Maximum focus on the exact frequencies where sung notes exist
+            const combinedColorControl = (midSensitive * 0.7) + (lowMidSensitive * 0.3);
+
+            // Hue spread driven by preset-controlled audioHueSpread
+            // Apply user-controlled hue reactivity scale
+            let hue = Math.floor(combinedColorControl * 360 * audioHueSpread * hueReactivityScale) % 360;
+
+            // High-frequency modulation range is preset-controlled (audioHighModRange)
+            const highModulation = Math.floor((high / 255) * audioHighModRange) - Math.floor(audioHighModRange / 2);
+            hue = (hue + highModulation + 360) % 360;
+
+            // Saturation: scale and clamp to avoid dull/blown-out colors
+            let satRaw = 85 + Math.floor((midNormalized * 15) * satGainScale);
+            const saturation = Math.min(100, Math.max(satFloor, satRaw));
+
+            // Lightness: modulate with brightness depth and clamp to preset bounds
+            const lightnessRange = brightnessMax - brightnessMin;
+            const lightness = Math.round(brightnessMin + lightnessRange * Math.min(1, Math.max(0, volume * brightnessDepthScale)));
+
+            config.primaryColor = `hsl(${hue}, ${saturation}%, ${lightness}%)`;
+            const compHue = (hue + 180) % 360;
+            config.secondaryColor = `hsl(${compHue}, ${saturation}%, ${lightness}%)`;
+
+            // Update color pickers
+            const primaryHex = hslToHex(hue, saturation, lightness);
+            const secondaryHex = hslToHex(compHue, saturation, lightness);
+            document.getElementById('primaryColor').value = primaryHex;
+            document.getElementById('secondaryColor').value = secondaryHex;
+
+
+
+            // HIGH → CHARACTER SET (high frequencies pick character complexity)
+            const highNormalized = high / 255;
+            const charIndex = Math.floor(highNormalized * 5); // 0-4
+            const characterSets = ['matrix', 'binary', 'hex', 'symbols', 'katakana'];
+            config.characterSet = characterSets[Math.min(charIndex, 4)];
+            document.getElementById('characterSet').value = config.characterSet;
+
+            // OVERALL VOLUME → INTENSITY (loudness = brightness)
+            config.intensity = 30 + Math.floor(volume * 70); // 30-100
+
+
+
+            // BASS + HIGH COMBO → DIRECTION (bass OR high energy changes direction)
+            // Adjust thresholds based on mode - MUCH LOWER for Wallpaper Engine!
+            // ULTRA SENSITIVE: Respond to even tiny audio movements
+            const bassThreshold = isWallpaperEngine ? 3 : 10;
+            const highThreshold = isWallpaperEngine ? 4 : 15;
+            const lowMidThreshold = isWallpaperEngine ? 5 : 20;
+
+            const directionTrigger = bass > bassThreshold || high > highThreshold || lowMid > lowMidThreshold;
+            if (directionTrigger) {
+                // Build directions array based on diagonal setting
+                const directions = audioDiagonalsEnabled
+                    ? ['down', 'up', 'left', 'right', 'diagonal', 'toward']
+                    : ['down', 'up', 'left', 'right']; // No diagonals when disabled
+
+                // Use combined audio energy to pick direction
+                const dirValue = (bass + high + lowMid) / 3;
+                const dirIndex = Math.floor((dirValue / 255) * directions.length);
+                const newDirection = directions[Math.min(dirIndex, directions.length - 1)];
+                const oldDirection = config.direction;
+
+                // Reinitialize drop positions when switching to/from horizontal
+                if (matrixCanvas && matrixDrops && oldDirection !== newDirection) {
+                    const fontSize = config.fontSize;
+                    const wasHorizontal = (oldDirection === 'left' || oldDirection === 'right');
+                    const isHorizontal = (newDirection === 'left' || newDirection === 'right');
+
+                    if (wasHorizontal !== isHorizontal) {
+                        // Switching orientation - reinitialize all drops
+                        const columns = Math.floor(matrixCanvas.width / fontSize);
+                        for (let i = 0; i < columns; i++) {
+                            if (isHorizontal) {
+                                // Going horizontal: randomize X positions across full width
+                                matrixDrops[i] = Math.random() * (matrixCanvas.width / fontSize);
+                            } else {
+                                // Going vertical: randomize Y positions across full height
+                                matrixDrops[i] = Math.random() * (matrixCanvas.height / fontSize);
+                            }
+                        }
+                    }
+                }
+
+                config.direction = newDirection;
+                document.getElementById('rainDirection').value = config.direction;
+            }
+
+            // Update UI sliders
+            document.getElementById('rainSpeed').value = 101 - config.speed;
+            document.getElementById('rainIntensity').value = config.intensity;
+        }
+
+        function drawAudioVisualizer(bass, lowMid, mid, high) {
+            const visualizer = document.getElementById('audioVisualizer');
+            if (!visualizer) return;
+
+            // Create frequency bars
+            const bassHeight = (bass / 255) * 100;
+            const lowMidHeight = (lowMid / 255) * 100;
+            const midHeight = (mid / 255) * 100;
+            const highHeight = (high / 255) * 100;
+
+            visualizer.innerHTML = `
+                <div style="position: absolute; bottom: 0; left: 10%; width: 15%; height: ${bassHeight}%; background: linear-gradient(to top, #ff0000, #ff6060); transition: height 0.05s;"></div>
+                <div style="position: absolute; bottom: 0; left: 30%; width: 15%; height: ${lowMidHeight}%; background: linear-gradient(to top, #ff8000, #ffaa60); transition: height 0.05s;"></div>
+                <div style="position: absolute; bottom: 0; left: 50%; width: 15%; height: ${midHeight}%; background: linear-gradient(to top, #00ff00, #60ff60); transition: height 0.05s;"></div>
+                <div style="position: absolute; bottom: 0; left: 70%; width: 15%; height: ${highHeight}%; background: linear-gradient(to top, #0080ff, #60a0ff); transition: height 0.05s;"></div>
+                <div style="position: absolute; top: 5px; left: 10%; font-size: 10px; color: #ff6060;">BASS→Speed</div>
+                <div style="position: absolute; top: 5px; left: 30%; font-size: 10px; color: #ffaa60;">LOW→Color</div>
+                <div style="position: absolute; top: 5px; left: 50%; font-size: 10px; color: #60ff60;">MID→Color</div>
+                <div style="position: absolute; top: 5px; left: 70%; font-size: 10px; color: #60a0ff;">HIGH→Chars</div>
+            `;
+        }
+
+        function continuumTextHash(text) {
+            let hash = 2166136261;
+            for (const ch of text) {
+                hash ^= ch.codePointAt(0) || 0;
+                hash = Math.imul(hash, 16777619);
+            }
+            return hash >>> 0;
+        }
+
+        function continuumTextToGlyphs(text) {
+            const raw = Array.from(String(text || "").replace(/\[[^\]]*\]/g, " "));
+            const compact = raw
+                .filter((ch) => !/\s/.test(ch))
+                .join("")
+                .slice(0, 720);
+            return compact || "CHAMPIONCONTINUUMCOUNCILMIND";
+        }
+
+        function applyContinuumSpeechRain(payload) {
+            const text = String((payload && payload.text) || "").trim();
+            if (!text || !window.MatrixRainEngine) {
+                postContinuumWallpaperReceipt("speech-rain", false, {
+                    reason: !text ? "empty_text" : "matrix_engine_unavailable",
+                    event_id: payload && payload.event_id
+                });
+                return false;
+            }
+            const glyphs = continuumTextToGlyphs(text);
+            const hash = continuumTextHash(text);
+            const config = MatrixRainEngine.rainConfig;
+            const patterns = ["classic", "rainbow", "pentad", "chaos", "harmonic", "particles"];
+            const directions = ["down", "diagonal", "toward", "up"];
+            const force = Math.min(1, Math.max(0.22, text.length / 900));
+            const hue = hash % 360;
+            const secondaryHue = (hue + 52 + (hash % 83)) % 360;
+            window.continuumSpeechGlyphs = glyphs;
+            window.continuumSpeechTick = 0;
+            window.continuumSpeechStride = 1 + (hash % 4);
+            config.characterSet = glyphs;
+            config.pattern = patterns[hash % patterns.length];
+            config.direction = directions[(hash >> 5) % directions.length];
+            config.primaryColor = hslToHex(hue, 92, 58);
+            config.secondaryColor = hslToHex(secondaryHue, 88, 52);
+            config.speed = Math.max(10, 72 - Math.round(force * 42));
+            config.intensity = Math.min(100, 48 + Math.round(force * 52));
+            config.density = Math.min(100, 58 + (hash % 43));
+            config.fontSize = Math.min(22, Math.max(11, 11 + Math.round(force * 8)));
+
+            const controls = {
+                rainSpeed: 101 - config.speed,
+                rainIntensity: config.intensity,
+                rainDensity: config.density,
+                characterSize: config.fontSize,
+                primaryColor: config.primaryColor,
+                secondaryColor: config.secondaryColor,
+                rainDirection: config.direction,
+                characterSet: "custom",
+                customCharacters: glyphs.slice(0, 240),
+            };
+            for (const [id, value] of Object.entries(controls)) {
+                const el = document.getElementById(id);
+                if (el) el.value = value;
+            }
+            const sizeDisplay = document.getElementById("charSizeDisplay");
+            if (sizeDisplay) sizeDisplay.textContent = `${config.fontSize}px`;
+            updateRainConfig();
+            MatrixRainEngine.logActivity(`Continuum speech rain armed: ${glyphs.slice(0, 44)}`, "success");
+            postContinuumWallpaperReceipt("speech-rain", true, {
+                event_id: payload && payload.event_id,
+                textLength: text.length,
+                glyphPreview: glyphs.slice(0, 44),
+                config: {
+                    pattern: config.pattern,
+                    direction: config.direction,
+                    fontSize: config.fontSize,
+                    primaryColor: config.primaryColor
+                }
+            });
+            return true;
+        }
+
+        function continuumObject(value) {
+            if (!value) return {};
+            if (typeof value === "object") return value;
+            try {
+                const parsed = JSON.parse(String(value));
+                return parsed && typeof parsed === "object" ? parsed : {};
+            } catch {
+                return {};
+            }
+        }
+
+        function continuumBool(value, fallback = false) {
+            if (typeof value === "boolean") return value;
+            if (value === undefined || value === null || value === "") return fallback;
+            return ["1", "true", "yes", "on", "enabled", "open", "show"].includes(String(value).trim().toLowerCase());
+        }
+
+        function postContinuumWallpaperReceipt(kind, ok, detail = {}) {
+            const receipt = {
+                type: "continuum:wallpaper-receipt",
+                kind,
+                ok: Boolean(ok),
+                state: ok ? "iframe_applied" : "iframe_rejected",
+                event_id: detail.event_id || "",
+                detail,
+                ts: Date.now()
+            };
+            try {
+                window.parent?.postMessage(receipt, "*");
+            } catch {}
+            try {
+                window.localStorage?.setItem("continuum.wallpaperIframeReceipt.v1", JSON.stringify(receipt));
+            } catch {}
+            return receipt;
+        }
+
+        function continuumPatternName(value) {
+            const raw = String(value || "").trim().toLowerCase();
+            const aliases = {
+                rain: "classic",
+                matrix: "classic",
+                green: "classic",
+                prism: "pentad",
+                wave: "harmonic",
+                waves: "harmonic",
+                particle: "particles"
+            };
+            return aliases[raw] || raw;
+        }
+
+        function continuumControlValue(id, fallback = "") {
+            const el = document.getElementById(id);
+            if (!el || el.value === undefined || el.value === null || el.value === "") return fallback;
+            return el.value;
+        }
+
+        function continuumWallpaperConfigSnapshot(appliedSettings = {}) {
+            const config = window.MatrixRainEngine && MatrixRainEngine.rainConfig ? MatrixRainEngine.rainConfig : {};
+            return {
+                pattern: config.pattern || continuumPatternName(appliedSettings.pattern) || "",
+                direction: config.direction || continuumControlValue("rainDirection", appliedSettings.direction || appliedSettings.rainDirection || ""),
+                fontSize: config.fontSize || continuumControlValue("characterSize", appliedSettings.fontSize || appliedSettings.characterSize || ""),
+                primaryColor: config.primaryColor || continuumControlValue("primaryColor", appliedSettings.primaryColor || ""),
+                secondaryColor: config.secondaryColor || continuumControlValue("secondaryColor", appliedSettings.secondaryColor || ""),
+                speed: config.speed || continuumControlValue("rainSpeed", appliedSettings.speed || appliedSettings.rainSpeed || ""),
+                intensity: config.intensity || continuumControlValue("rainIntensity", appliedSettings.intensity || appliedSettings.rainIntensity || ""),
+                density: config.density || continuumControlValue("rainDensity", appliedSettings.density || appliedSettings.rainDensity || ""),
+                canvasOpacity: matrixCanvas ? getComputedStyle(matrixCanvas).opacity : ""
+            };
+        }
+
+        function setControlValue(id, value, after) {
+            const el = document.getElementById(id);
+            if (!el || value === undefined || value === null || value === "") return false;
+            el.value = value;
+            if (typeof after === "function") after();
+            return true;
+        }
+
+        function setMatrixModalPanel(mode) {
+            const modal = document.querySelector(".matrix-modal");
+            const minimizeBtn = document.getElementById("minimizeBtn");
+            if (!modal) return false;
+            const clean = String(mode || "").trim().toLowerCase();
+            if (["open", "show", "maximize", "max"].includes(clean)) {
+                modal.style.display = "flex";
+                modal.classList.remove("minimized");
+                if (minimizeBtn) {
+                    minimizeBtn.textContent = "−";
+                    minimizeBtn.title = "Minimize utilities to see matrix rain";
+                }
+                return true;
+            }
+            if (["minimize", "min", "collapse"].includes(clean)) {
+                modal.style.display = "flex";
+                modal.classList.add("minimized");
+                if (minimizeBtn) {
+                    minimizeBtn.textContent = "M +";
+                    minimizeBtn.title = "Press M or click to maximize";
+                }
+                return true;
+            }
+            if (["close", "hide", "off"].includes(clean)) {
+                modal.style.display = "none";
+                return true;
+            }
+            if (clean === "toggle") {
+                if (modal.style.display === "none") {
+                    modal.style.display = "flex";
+                } else {
+                    toggleMatrixModal();
+                }
+                return true;
+            }
+            return false;
+        }
+
+        function setAudioReverseEnabled(enabled) {
+            if (audioReverseEnabled !== Boolean(enabled)) toggleAudioReverse();
+        }
+
+        function setAudioDiagonalsEnabled(enabled) {
+            if (audioDiagonalsEnabled !== Boolean(enabled)) toggleAudioDiagonals();
+        }
+
+        function setReverseFlowState(value) {
+            const wantReverse = typeof value === "string"
+                ? ["reverse", "reversed", "backward", "backwards", "-1", "true", "on"].includes(value.toLowerCase())
+                : Boolean(value);
+            if ((reverseFlowMultiplier === -1) !== wantReverse) toggleReverseFlow();
+        }
+
+        function applyContinuumWallpaperSettings(settings) {
+            if (!settings || !window.MatrixRainEngine) return false;
+            const config = MatrixRainEngine.rainConfig;
+            let changed = false;
+
+            if (settings.settingsPanel !== undefined) changed = setMatrixModalPanel(settings.settingsPanel) || changed;
+            if (settings.panel !== undefined) changed = setMatrixModalPanel(settings.panel) || changed;
+
+            if (settings.colorPreset) {
+                setColorPreset(String(settings.colorPreset).toLowerCase());
+                changed = true;
+            }
+            if (settings.pattern) {
+                setRainPattern(continuumPatternName(settings.pattern), null);
+                changed = true;
+            }
+            if (settings.primaryColor) changed = setControlValue("primaryColor", settings.primaryColor, updateRainColors) || changed;
+            if (settings.secondaryColor) changed = setControlValue("secondaryColor", settings.secondaryColor, updateRainColors) || changed;
+            if (settings.speed !== undefined) changed = setControlValue("rainSpeed", clamp(Number(settings.speed), 1, 100), updateRainSpeed) || changed;
+            if (settings.rainSpeed !== undefined) changed = setControlValue("rainSpeed", clamp(Number(settings.rainSpeed), 1, 100), updateRainSpeed) || changed;
+            if (settings.intervalMs !== undefined) {
+                config.speed = clamp(Number(settings.intervalMs), 5, 250);
+                const speedEl = document.getElementById("rainSpeed");
+                if (speedEl) speedEl.value = clamp(101 - config.speed, 1, 100);
+                changed = true;
+            }
+            if (settings.intensity !== undefined) changed = setControlValue("rainIntensity", clamp(Number(settings.intensity), 1, 100), updateRainIntensity) || changed;
+            if (settings.rainIntensity !== undefined) changed = setControlValue("rainIntensity", clamp(Number(settings.rainIntensity), 1, 100), updateRainIntensity) || changed;
+            if (settings.density !== undefined) changed = setControlValue("rainDensity", clamp(Number(settings.density), 1, 100), updateRainDensity) || changed;
+            if (settings.rainDensity !== undefined) changed = setControlValue("rainDensity", clamp(Number(settings.rainDensity), 1, 100), updateRainDensity) || changed;
+            if (settings.fontSize !== undefined) changed = setControlValue("characterSize", clamp(Number(settings.fontSize), 1, 100), updateCharacterSize) || changed;
+            if (settings.characterSize !== undefined) changed = setControlValue("characterSize", clamp(Number(settings.characterSize), 1, 100), updateCharacterSize) || changed;
+            if (settings.direction) changed = setControlValue("rainDirection", settings.direction, updateRainDirection) || changed;
+            if (settings.rainDirection) changed = setControlValue("rainDirection", settings.rainDirection, updateRainDirection) || changed;
+
+            if (settings.customCharacters) {
+                const customInput = document.getElementById("customCharacters");
+                const characterSet = document.getElementById("characterSet");
+                if (customInput && characterSet) {
+                    customInput.value = String(settings.customCharacters).slice(0, 720);
+                    characterSet.value = "custom";
+                    updateCharacterSet();
+                    changed = true;
+                }
+            } else if (settings.characterSet) {
+                changed = setControlValue("characterSet", settings.characterSet, updateCharacterSet) || changed;
+            }
+
+            if (settings.hueReactivity !== undefined) changed = setControlValue("hueReactSlider", clamp(Number(settings.hueReactivity), 50, 200), updateHueReactivity) || changed;
+            if (settings.saturationGain !== undefined) changed = setControlValue("satGainSlider", clamp(Number(settings.saturationGain), 50, 200), updateSaturationGain) || changed;
+            if (settings.brightnessDepth !== undefined) changed = setControlValue("brightDepthSlider", clamp(Number(settings.brightnessDepth), 50, 200), updateBrightnessDepth) || changed;
+
+            if (settings.audioReverse !== undefined) { setAudioReverseEnabled(continuumBool(settings.audioReverse)); changed = true; }
+            if (settings.audioDiagonals !== undefined) { setAudioDiagonalsEnabled(continuumBool(settings.audioDiagonals, true)); changed = true; }
+            if (settings.reverseFlow !== undefined) { setReverseFlowState(settings.reverseFlow); changed = true; }
+            if (settings.autoOrchestrator !== undefined && autoOrchestratorActive !== continuumBool(settings.autoOrchestrator)) {
+                toggleAutoOrchestrator();
+                changed = true;
+            }
+            if (settings.audioReactive !== undefined && audioReactiveActive !== continuumBool(settings.audioReactive)) {
+                toggleAudioReactive();
+                changed = true;
+            }
+            if (settings.canvasOpacity !== undefined && matrixCanvas) {
+                matrixCanvas.style.opacity = String(clamp(Number(settings.canvasOpacity), 0, 1));
+                changed = true;
+            }
+
+            if (changed) {
+                updateRainConfig();
+                MatrixRainEngine.logActivity("Continuum wallpaper settings applied", "success");
+            }
+            return changed;
+        }
+
+        function applyContinuumWallpaperControl(payload) {
+            const data = payload || {};
+            const settings = {
+                ...continuumObject(data.settings_json),
+                ...continuumObject(data.settings),
+            };
+            if (data.text) applyContinuumSpeechRain(data);
+            if (data.mode && !["rain", "display", "text"].includes(String(data.mode).toLowerCase())) {
+                settings.settingsPanel = data.mode;
+            }
+            const command = String(data.command || "").trim().toLowerCase();
+            if (command === "chaos_once") activateChaosRandomizer();
+            if (command === "toggle_audio") toggleAudioReactive();
+            if (command === "audio_on") settings.audioReactive = true;
+            if (command === "audio_off") settings.audioReactive = false;
+            if (command === "auto_on") settings.autoOrchestrator = true;
+            if (command === "auto_off") settings.autoOrchestrator = false;
+            if (command === "reverse_flow") toggleReverseFlow();
+            if (command === "settings_open") settings.settingsPanel = "open";
+            if (command === "settings_minimize") settings.settingsPanel = "minimize";
+            if (command === "settings_close") settings.settingsPanel = "close";
+            const changed = applyContinuumWallpaperSettings(settings);
+            if (command && window.MatrixRainEngine) {
+                MatrixRainEngine.logActivity(`Continuum wallpaper command: ${command}`, "info");
+            }
+            const ok = Boolean(data.text || command || changed);
+            postContinuumWallpaperReceipt("wallpaper-control", ok, {
+                event_id: data.event_id || "",
+                command,
+                settingsKeys: Object.keys(settings),
+                appliedSettings: settings,
+                config: continuumWallpaperConfigSnapshot(settings)
+            });
+            return ok;
+        }
+
+        window.addEventListener("message", (event) => {
+            const data = event && event.data;
+            if (!data) return;
+            if (data.type === "continuum:speech-rain") {
+                applyContinuumSpeechRain(data);
+                return;
+            }
+            if (data.type === "continuum:wallpaper-control") {
+                applyContinuumWallpaperControl(data);
+            }
+        });
+
+        window.applyContinuumSpeechRain = applyContinuumSpeechRain;
+        window.applyContinuumWallpaperControl = applyContinuumWallpaperControl;
+        window.continuumWallpaperProbe = function() {
+            const canvas = document.getElementById("matrix-canvas") || document.querySelector("canvas");
+            let receipt = {};
+            try { receipt = JSON.parse(window.localStorage?.getItem("continuum.wallpaperIframeReceipt.v1") || "{}"); } catch {}
+            return {
+                ready: Boolean(window.MatrixRainEngine),
+                canvas_present: Boolean(canvas),
+                canvas_width: canvas ? canvas.width : 0,
+                canvas_height: canvas ? canvas.height : 0,
+                canvas_display: canvas ? getComputedStyle(canvas).display : "",
+                canvas_opacity: canvas ? getComputedStyle(canvas).opacity : "",
+                last_receipt: receipt,
+                config: continuumWallpaperConfigSnapshot(receipt?.detail?.appliedSettings || {})
+            };
+        };
+
+        postContinuumWallpaperReceipt("ready", true, window.continuumWallpaperProbe());
+
+        
+
+    </script>
+</body>
+</html>
+

@@ -1,0 +1,11 @@
+{
+  "_README": "Kilo Code daemon config. Launch with: $env:FORUM_CONFIG='forum_daemon.kilo.json'; python forum_daemon.py",
+  "agent": "Kilo",
+  "agent_cmd": "python forum_kilo_agent.py",
+  "answer_when": "addressed",
+  "known_agents": ["Claude", "Gemini", "Codex", "Auto", "Cascade", "Antigravity", "Kilo"],
+  "channel": "cli_brain_channel",
+  "heartbeat_every": 8.0,
+  "poll_every": 1.0,
+  "answer_timeout": 600
+}

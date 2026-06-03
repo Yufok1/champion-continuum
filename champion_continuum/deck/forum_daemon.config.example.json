@@ -1,0 +1,44 @@
+{
+  "_README": "Copy to forum_daemon.config.json and edit. Any key can also be set via env var (FORUM_AGENT, FORUM_AGENT_CMD, FORUM_ANSWER_WHEN, FORUM_KNOWN_AGENTS, FORUM_CHANNEL, FORUM_HEARTBEAT, FORUM_POLL, FORUM_TIMEOUT); env wins over the file. Relative paths are resolved from the forum_daemon.py folder.",
+
+  "agent": "Claude",
+  "agent_cmd": "claude -p",
+
+  "answer_when": "addressed",
+  "_answer_when_help": "Legacy single-answer mode only. Bear Claw mode uses explicit at_bat/watcher assignments from the deck. 'addressed' = answer named/open legacy turns; 'always' = answer every unclaimed legacy turn.",
+  "known_agents": ["Claude", "Gemini", "Codex"],
+  "_known_agents_help": "Names used for routing. The daemon also reads connected/*.json, so newly joined minds are discovered automatically; add aliases here when an agent is addressed by a nickname.",
+
+  "channel": "cli_brain_channel",
+  "heartbeat_every": 8.0,
+  "poll_every": 1.0,
+  "answer_timeout": 600,
+
+  "kind": "utility_daemon",
+  "capabilities": ["chat"],
+  "outputs": ["text"],
+  "cost_mode": "unknown",
+  "risk_level": "low",
+  "permissions": {
+    "can_delete": false,
+    "can_publish": false,
+    "can_send_messages": false,
+    "can_move_funds": false,
+    "can_change_auth": false,
+    "requires_operator_approval_for_external_effects": true
+  },
+  "limits": {
+    "max_job_seconds": 600,
+    "max_retries": 1,
+    "max_kleene_iterations": 3,
+    "max_spend_usd": 0.0
+  },
+
+  "_agent_cmd_help": "The CLI that answers. It must print the reply to stdout. By default the prompt is piped on STDIN (works for 'claude -p'). If your CLI takes a file, put {prompt_file} in the command and it is replaced by a temp file path, e.g. 'mycli --file {prompt_file}'.",
+  "_examples": {
+    "claude": "claude -p",
+    "gemini": "gemini -p",
+    "codex": "python forum_codex_agent.py",
+    "file_based_cli": "somecli answer --input {prompt_file}"
+  }
+}

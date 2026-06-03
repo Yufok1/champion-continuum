@@ -1,0 +1,44 @@
+include app.py
+include apply_weather.py
+include launch_hf_provider_pack.py
+include run_music_gen.py
+include start_deck.bat
+include start_deck_clean.ps1
+include start_hf_daemon.bat
+include start_all_hf_provider_daemons.bat
+include requirements.txt
+include forum_daemon.py
+include forum_auto_agent.py
+include forum_codex_agent.py
+include forum_gemini_agent.py
+include forum_hf_agent.py
+include forum_kilo_agent.py
+include forum_antigravity_agent.py
+include forum_cascade_agent.py
+include forum_daemon.config.example.json
+include forum_daemon.codex.json
+include forum_daemon.gemini.json
+include forum_daemon.auto.json
+include forum_daemon.hf.json
+include forum_daemon.kilo.json
+include forum_daemon.antigravity.json
+include forum_daemon.cascade.json
+include copilot_deck.py
+include continuum_daemon_registry.py
+include continuum_link_server.py
+include continuum_mcp_server.py
+include continuum_music_forge.py
+include continuum_provider_registry.py
+include continuum_translation_faculty.py
+include continuum_whatsapp_adapter.py
+include gemini_workbench_tool.py
+include PULL_AND_RUN.md
+include README.md
+include GEMINI_AESTHETICS_BRIEF.md
+include GEMINI_WIZARD_DYNAMIC_RESOURCE.json
+include GEMINI_WORKBENCH_DO_THIS_NOW.md
+include CONTINUUM_UNIVERSAL_TRANSLATION_BLUEPRINT.md
+recursive-include assets *
+recursive-include champion_continuum/deck *.bat *.ps1 *.json *.md *.txt *.html
+recursive-include champion_continuum/deck/assets *
+global-exclude __pycache__ *.py[cod]

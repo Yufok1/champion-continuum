@@ -2,11 +2,17 @@ __pycache__/
 **/__pycache__/
 *.pyc
 *.pyo
+*.pid
 
 .gradio/
 .venv/
 venv/
 env/
+.pytest_tmp*/
+.pkg_install_*/
+build/
+dist*/
+*.egg-info/
 
 .env
 .env.*
@@ -26,4 +32,3 @@ success_fix_test/
 *.err.log
 deck_run.log
 app.py.p*
-assets/continuum_wallpaper_preview.jpg
