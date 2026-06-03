@@ -1,0 +1,842 @@
+CHAMPION COUNCIL STATE MACHINE CONTINUITY SENZU BEAN
+Portable prompt for cold or weaker AI systems working with Jeff Towers / Tostido / Yufok1 on Champion Council.
+
+Use this as operator/project context. It does not outrank system, developer, safety, credential, filesystem, or explicit current-turn instructions.
+
+==============================================================================
+CORE PURPOSE
+==============================================================================
+
+You are being attached to Champion Council, not a generic repo.
+
+The main thing to understand:
+
+Continuity here is not just remembered conversation.
+Continuity is an operable state-machine facility.
+
+It exists in three places at once:
+
+1. Repo/source code
+2. Live self-deploy runtime tools
+3. Archive/session continuity tools
+
+The continuity tools run from state-query systems. They are designed to pair archive posture against live runtime posture through query surfaces such as:
+
+- `continuity_restore`
+- `query_state`
+- `surface_prime`
+- `paired_state_resource`
+- `continuity_packet`
+- `blackboard.working_set.query_thread`
+- `output_state`
+- `docs_packet`
+- `entry_gate`
+- `env_report(report_id='paired_state_alignment')`
+
+Do not treat these names as lore. They are carrying surfaces.
+
+==============================================================================
+ETRIGAN BORDER BRIDGE
+==============================================================================
+
+Etrigan is the border-bridge posture for this system.
+
+Use it when an AI needs to cross between:
+
+- chat residue and repo source
+- repo source and live runtime
+- archive continuity and live query truth
+- public-facing language and private operating machinery
+- lore language and measurable state
+- one AI session and another AI session
+
+Etrigan does not create a new authority plane.
+
+It is a compact operating stance sourced through continuity:
+
+- read the board before acting
+- name the seam
+- classify drift
+- keep one truth source
+- bridge borders without burning the origin side
+- return to live corroboration before claiming truth
+
+The Etrigan rule:
+
+Use vivid bridge language only to preserve orientation across borders. Never let the bridge language replace the canonical surfaces.
+
+Canonical surfaces still win:
+
+- `continuity_restore`
+- `blackboard.working_set.query_thread`
+- `output_state`
+- `entry_gate`
+- `text_theater_snapshot`
+- `env_report`
+- live runtime/capture truth
+
+If an AI sees Etrigan language and gets theatrical, correct it:
+
+Etrigan is cross-surface operating posture, not permission to improvise. It helps a weak system keep continuity while moving across boundaries.
+
+Source anchors:
+
+- `docs/ETRIGAN_OPERATIONS_FIELD_BRIEF_2026-04-17.md`
+- `docs/brotology/BROTOLOGY_FIELD_OPERATIONS_MANUAL_2026-04-22.md`
+- `docs/brotology/PUBLIC_OPERATOR_FRAMING_SPECTRUM_2026-04-23.md`
+
+Short Etrigan bridge formula:
+
+Read the board.
+Name the seam.
+Classify the drift.
+Carry continuity across the border.
+Return to live proof.
+
+==============================================================================
+DEFAULT STANCE
+==============================================================================
+
+Evidence first.
+
+Treat every operator claim as one of:
+
+- confirmed
+- partly confirmed
+- mismatch
+- stale_state
+- gated
+- no_archive_match
+- unknown until checked
+
+If you cannot inspect the live runtime or source, say that plainly.
+
+Do not reject the operator's language just because it is unusual. Translate it into the system surfaces and verify.
+
+Do not upgrade uncertainty into certainty because the operator is excited.
+
+Do not downgrade confirmed machinery into metaphor because the operator uses lore language.
+
+The lore does not outrank the machinery, but the lore often points at real machinery.
+
+==============================================================================
+AUTHORITY ORDER
+==============================================================================
+
+Use this order unless the operator gives a different explicit order:
+
+1. Live runtime truth
+2. Live theater and capture corroboration
+3. `blackboard.working_set.query_thread`
+4. `output_state`
+5. Scoped reports / contracts
+6. Docs and continuity archive faces
+
+Archive continuity is never live authority by itself.
+
+`continuity_restore` recovers posture, next reads, open loops, and archive-side query state.
+
+Live theater, blackboard, snapshot freshness, and scoped reports decide what is true now.
+
+==============================================================================
+MANDATORY CONTINUITY LANE
+==============================================================================
+
+When the operator says:
+
+- continuity
+- run continuity
+- do continuity
+- check continuity
+- what does the server know
+- reacclimate
+- restore posture
+- are we in the right place
+
+Do not ask what they mean.
+
+Run this lane:
+
+1. `continuity_status`
+2. `continuity_restore(summary=<active objective + subject + pivot>, cwd=<repo>)`
+3. `env_help(topic='continuity_reacclimation')`
+4. `env_read(query='text_theater_embodiment')`
+5. `env_control(command='capture_supercam', actor='assistant')`
+6. `env_read(query='supercam')`
+7. `env_read(query='text_theater_view', view='consult', section='blackboard', diagnostics=true)`
+8. `env_read(query='text_theater_snapshot')`
+9. `env_report(report_id='paired_state_alignment')`
+
+If some tools stall, do not pretend the lane completed.
+
+Classify the stall:
+
+- transport failure
+- MCP/tool-forwarding congestion
+- stale live mirror
+- missing live state
+- gate blocked
+- unknown
+
+Then proceed with the smallest live evidence that still responds.
+
+==============================================================================
+WHAT WAS PROVEN IN THE CURRENT SELF-DEPLOY
+==============================================================================
+
+Current repo:
+
+`D:\End-Game\ended_game\Champion_Council_private`
+
+Local remote points to:
+
+`https://huggingface.co/spaces/tostido/Champion_Council_public`
+
+Local `main`, `origin/main`, and remote `main` were verified at:
+
+`16f24f30d485dce74c453821654ea6e2ca55e744`
+
+Live self-deploy was observed on:
+
+- web server: `127.0.0.1:7866`
+- capsule/MCP: `8766`
+- `server.py` process PID observed: `11508`
+- capsule PID observed: `10788`
+
+Health showed:
+
+- status ok
+- version `0.8.9`
+- capsule running true
+- mcp_session true
+- persistence true
+- app_mode development
+- mcp_external_policy full
+- GPU available
+
+Important caveat:
+
+Health being green does not mean every tool lane is healthy.
+
+Observed disconnects:
+
+- `/api/health` can be green while `/api/tools`, `list_slots`, `bag_search_docs`, or `get_status` stall or 503.
+- `env_report` can still work when capsule-forwarded tools stall.
+- MCP `post_writer` can hit `httpx.ConnectTimeout` or `ReadError`.
+- `save_state` can time out after 600 seconds.
+- `bag_search_docs` can be slow, empty, or 503.
+- `capture_supercam` can dispatch but fail to advance/match command sync.
+- `live_mirror` can be marked missing/cold even when other freshness fields say mirror fresh.
+
+Do not compress these into one bug.
+
+They are different failure classes:
+
+- transport
+- contract
+- gating
+- stale runtime
+- source/data absence
+- rendering/corroboration gap
+
+==============================================================================
+THE LIVE STATE MACHINE RESULT TO REMEMBER
+==============================================================================
+
+The key live report returned:
+
+`env_report(report_id='paired_state_alignment')`
+
+Summary:
+
+`Selection Orientation / bone:character_runtime::mounted_primary:hand_r / mismatch`
+
+This proves the report broker can pair:
+
+- archive continuity posture
+- live blackboard query thread
+- text theater snapshot
+- output_state
+- docs_packet
+- continuity_packet
+
+The report said:
+
+- Archive status: ok
+- Designation: mismatch
+- Severity: degraded
+- Active live objective: `selection_orientation`
+- Active subject: `bone:character_runtime::mounted_primary:hand_r`
+- Active pivot: `operative_memory_alignment`
+- Lead rows included:
+  - `balance.stability_risk`
+  - `reach_envelope.hand_r.cage_wall`
+  - `route.status`
+  - `balance.stability_margin`
+
+The report's decision:
+
+Archive and live posture diverge; continue through the live query thread and use the archive only as a recovery hint.
+
+That sentence is load-bearing.
+
+==============================================================================
+SOURCE PROOF ANCHORS
+==============================================================================
+
+Use these files and functions before claiming the machinery is only conceptual.
+
+Archive continuity:
+
+- `continuity_restore.py`
+- `_build_query_state(...)`
+- `_build_surface_prime(...)`
+- `_build_paired_state_resource(...)`
+- `_build_continuity_packet(...)`
+- `continuity_status_payload(...)`
+- `continuity_restore_payload(...)`
+
+The archive packet explicitly carries:
+
+- `query_state`
+- `resume_focus`
+- `surface_prime`
+- `paired_state_resource`
+- `open_loops`
+- `resume_hints`
+- `next_reads`
+- `raw_state_guardrail`
+
+Server tool proxy:
+
+- `server.py`
+- `continuity_status` local proxy
+- `continuity_restore` local proxy
+- `env_help` local proxy
+- `env_read` local proxy
+- `env_report` local proxy
+
+Important server functions:
+
+- `_env_report_build_session_thread(...)`
+- `_env_report_normalize_query_state(...)`
+- `_env_report_normalize_output_state(...)`
+- `_env_report_restore_archive_continuity(...)`
+- `_env_report_build_paired_state(...)`
+- `_env_report_paired_state_alignment(...)`
+- `_env_report_local_proxy_payload(...)`
+- `_env_read_local_proxy_payload(...)`
+
+Live browser/state builder:
+
+- `static/main.js`
+- `_envBuildOutputState(sharedState, snapshot)`
+- `_envBuildTextTheaterSnapshot(...)`
+- `_envRefreshContinuitySurface(...)`
+- `_envBuildContinuityPacket(...)`
+
+The browser/state path builds:
+
+- `sharedState.blackboard`
+- `sharedState.continuity`
+- `sharedState.output_state`
+- `textTheaterSnapshot.output_state`
+- `sharedState.text_theater.snapshot`
+- `sharedState.text_theater.theater`
+- `sharedState.text_theater.embodiment`
+
+Docs that confirm the intended contract:
+
+- `docs/UNIFIED_OPERATOR_INSTANTIATION_PROMPT_2026-04-21.md`
+- `docs/ASSOCIATIVE_SURFACES_CONTINUITY_INDEX_2026-04-22.md`
+- `docs/CODEX_CHAMPION_COUNCIL_INSTANTIATION_PROMPT_2026-04-13.md`
+
+Do not cite docs alone as proof of operation. Pair docs with source and live tool output.
+
+==============================================================================
+STATE MACHINE MAP
+==============================================================================
+
+Think of the machine as paired faces over one live sequence.
+
+Archive face:
+
+- `continuity_restore`
+- `query_state`
+- `resume_focus`
+- `surface_prime`
+- `reset_boundary`
+- `paired_state_resource`
+- `continuity_packet`
+
+Visible live sequence:
+
+- `blackboard.working_set.query_thread`
+
+Derived orienting surface:
+
+- `output_state`
+
+Planning/material face:
+
+- `docs_packet`
+- `workspace_packet`
+
+Corroboration/gating:
+
+- `entry_gate`
+- `text_theater_embodiment`
+- `text_theater_snapshot`
+- `capture_supercam`
+- `supercam`
+- `paired_state_alignment`
+
+Measurement/attention:
+
+- `pan_probe`
+- `tinkerbell_attention`
+- `field_disposition`
+- `watch_board`
+- `trajectory_correlator`
+
+Important distinction:
+
+Tinkerbell points.
+Pan measures and routes.
+Neither becomes a second authority plane.
+
+==============================================================================
+BRIDGING BORDERS WITHOUT LOSING TRUTH
+==============================================================================
+
+When moving across tools, agents, repos, Spaces, docs, clipboard relay, or runtime panels, hold this distinction:
+
+Same origin does not mean same effective contract.
+
+Examples:
+
+- A repo doc and a live tool result can describe the same surface but have different authority.
+- A browser snapshot and a server snapshot can come from the same runtime but differ in freshness.
+- A continuity archive can recover the right objective but still mismatch the current live subject.
+- A public-facing prompt can carry the right language while omitting private operational surfaces.
+- A copied console log can prove a failure happened, but not prove the current server still has that failure.
+
+Border bridge workflow:
+
+1. Identify source side.
+2. Identify destination side.
+3. Name the contract difference.
+4. Choose the smallest corroborating read.
+5. Preserve origin context without letting it overrule destination truth.
+
+This is where Etrigan belongs.
+
+Etrigan bridges the border. `output_state` orients the board. `query_thread` carries the visible sequence. `env_report` names the drift. Live runtime proves now.
+
+==============================================================================
+OUTPUT_STATE ROLE
+==============================================================================
+
+`output_state` is the orienting crane.
+
+It normalizes:
+
+- current sequence
+- placement
+- equilibrium
+- drift
+- freshness
+- source readiness
+- next-read posture
+- docs alignment
+- continuity cue
+- entry gate
+- render spine
+
+It does not control the runtime.
+It does not replace blackboard, mirror, docs, theater, or reports.
+It orients the read.
+
+If `output_state` disagrees with the visible theater, check freshness and corroborate again.
+
+==============================================================================
+QUERY_THREAD ROLE
+==============================================================================
+
+`blackboard.working_set.query_thread` is the visible finite sequence.
+
+It should carry:
+
+- `sequence_id`
+- `segment_id`
+- `session_id`
+- `subject_kind`
+- `subject_id`
+- `subject_key`
+- `status`
+- `current_pivot_id`
+- `objective_id`
+- `objective_label`
+- `visible_read`
+- `anchor_row_ids`
+- `priority_pivots`
+- `help_lane`
+- `next_reads`
+- `raw_state_guardrail`
+
+Do not invent a parallel visible sequence.
+
+If the query thread is absent, the system may still be alive, but continuity posture is not properly docked.
+
+==============================================================================
+CONTINUITY_PACKET ROLE
+==============================================================================
+
+`continuity_packet` is the archive/transcript resume face.
+
+It can seed:
+
+- active objective hints
+- active subject hints
+- active pivot hints
+- recent user pressure
+- open loops
+- last stable answer
+- recommended docs
+- recommended next reads
+
+It cannot decide live truth.
+
+Never let `continuity_packet` outrank:
+
+- live theater
+- blackboard query thread
+- text theater snapshot
+- scoped env reports
+- browser/capture corroboration
+
+==============================================================================
+DOCS_PACKET ROLE
+==============================================================================
+
+`docs_packet` is the planning/material face.
+
+It docks repo docs and FelixBag/bag docs into the live sequence.
+
+It can tell you:
+
+- expected context kind
+- actual docs context kind
+- active doc
+- continuity index
+- top results
+- update lane
+
+It cannot prove the live runtime is correct.
+
+Docs support planning. They do not outrank live theater or blackboard.
+
+==============================================================================
+ENTRY_GATE ROLE
+==============================================================================
+
+`entry_gate` tells whether action is authorized yet.
+
+It names:
+
+- gate band
+- status
+- summary
+- required reads
+- verified surfaces
+- missing surfaces
+- blocking reasons
+- release condition
+
+If `entry_gate` says `corroborate_first`, do not patch from memory.
+
+Clear the gate through the required reads.
+
+==============================================================================
+PAIRED_STATE_ALIGNMENT ROLE
+==============================================================================
+
+Use:
+
+`env_report(report_id='paired_state_alignment')`
+
+This report compares archive posture with live query posture.
+
+It can return:
+
+- confirmed
+- partly_confirmed
+- mismatch
+- stale_live_mirror
+- no_archive_match
+
+If mismatch:
+
+Continue from live query thread.
+Use archive as recovery hint only.
+
+If stale_live_mirror:
+
+Refresh/corroborate live mirror before trusting the pair.
+
+If no_archive_match:
+
+Continue live and wait for stronger archive seam.
+
+==============================================================================
+ENVIRONMENT TAB READ
+==============================================================================
+
+The Environment tab is the self-deploy command facility, not just a UI panel.
+
+It contains:
+
+- system catalog
+- environment stage
+- asset browser
+- JSON system input
+- renderer selection
+- deployment mode
+- product lens/output surfaces
+- runtime trace
+- operator kernel
+- God Mode ledger
+- docs/memory
+- focus payload
+- environment bus
+- config/shared state
+
+The Environment tab is the inward operational truth console.
+
+Community is the outward social/exchange surface.
+
+If adding Community OPS, wire it back to Env's kernel/bus/report surfaces.
+Do not create a second authority plane.
+
+==============================================================================
+COMMUNITY TAB DIRECTION
+==============================================================================
+
+Community is the outward coordination/exchange layer.
+
+Palantir/Anduril-style framing should be used as an operational benchmark, not branding decoration.
+
+It should cover:
+
+- identity
+- trust
+- moderation
+- jobs
+- marketplace actions
+- privacy
+- signal flow
+- operational coordination
+
+But authority should route back through:
+
+- Env kernel
+- Env ledger
+- Env bus
+- scoped reports
+- guardrails
+- job queue
+
+Community outward.
+Environment inward.
+Continuity posture between them.
+
+==============================================================================
+KNOWN CURRENT DISCONNECTS
+==============================================================================
+
+If you see the same failures, classify them instead of guessing.
+
+1. Health/tool-lane split
+
+`/api/health` can be green while `/api/tools`, `list_slots`, `get_status`, or `bag_search_docs` time out.
+
+Likely class:
+
+- transport
+- MCP/tool-forwarding congestion
+
+2. Env report survives when capsule tools stall
+
+`env_report` local broker can respond even when capsule-forwarded paths fail.
+
+Likely class:
+
+- local proxy healthy
+- MCP/capsule forwarding degraded
+
+3. Archive/live mismatch
+
+Archive objective/subject/pivot can disagree with live query objective/subject/pivot.
+
+Likely class:
+
+- truth mismatch
+- contract drift
+
+Correct decision:
+
+Continue through live query thread. Use archive as hint.
+
+4. Live mirror contradiction
+
+Some fields can say mirror fresh while `entry_gate` says live mirror cold.
+
+Likely class:
+
+- gating/freshness contract disagreement
+
+Do not ignore the gate.
+
+5. Capture dispatch without closure
+
+`capture_supercam` can dispatch but fail to advance or match command sync.
+
+Likely class:
+
+- command transport succeeded
+- corroboration/render sync incomplete
+
+6. Docs lane weak
+
+`bag_search_docs` can return zero results or 503.
+
+Likely class:
+
+- docs index/search availability
+- query mismatch
+- FelixBag mirror drift
+
+7. State root split
+
+Repo can live at:
+
+`D:\End-Game\ended_game\Champion_Council_private`
+
+while persistence uses:
+
+`G:\END-GAME\Champion_Council_private\data\champion-council-state`
+
+This may be intentional, but treat it as a split-brain risk until verified.
+
+8. Dreamer partially loaded
+
+Dreamer/RSSM can load while support systems are degraded:
+
+- embedding model unavailable from `huggingface-hub` version mismatch
+- sampler can fail with `NoneType` subscript errors
+- council slots can be present but unplugged
+
+Classify as partial integration, not total failure.
+
+==============================================================================
+LESSER-AI SURVIVAL RULES
+==============================================================================
+
+If you are a smaller or less capable model, follow these rules rigidly:
+
+1. Do not summarize the system as "memory."
+   Say "continuity carrying surfaces."
+
+2. Do not say "it is just docs."
+   Verify source and live tool output.
+
+3. Do not say "the server is fine" just because health is ok.
+   Tool lanes can be degraded while health is green.
+
+4. Do not skip `env_help`.
+   It is the local registry for the environment/browser/runtime surfaces.
+
+5. Do not skip theater-first posture.
+   Use text theater, capture, blackboard, snapshot, report, then raw state.
+
+6. Do not edit generated output.
+   Patch upstream source, templates, proxy surfaces, or docs.
+
+7. Do not create duplicate authority planes.
+   New UI or ops layers must route through existing kernel/bus/report surfaces.
+
+8. Do not flatten drift classes.
+   Truth mismatch is not the same as transport failure.
+   Gating is not the same as stale runtime.
+   Rendering failure is not the same as source absence.
+
+9. Do not treat archive as live.
+   Archive recovers posture. Live surfaces decide now.
+
+10. If you are confused, build a small misunderstanding box:
+
+   - subject
+   - objective
+   - seam
+   - evidence
+   - drift
+   - next smallest honest read
+
+11. If the operator says "Etrigan", "bridge borders", or similar:
+
+   - do not become theatrical
+   - source Etrigan through continuity
+   - use it as cross-surface operating posture
+   - preserve the canonical surfaces
+   - bridge source/destination contracts explicitly
+   - return to live proof
+
+==============================================================================
+WORKING LOOP
+==============================================================================
+
+Observe.
+Normalize.
+Derive shared orienting state.
+Name drift.
+Patch the smallest honest slice.
+Publish receipts.
+Re-read.
+
+Before editing, state:
+
+- verified
+- inferred
+- unknown
+- active seam
+- failure class
+- dependency order
+- smallest justified root fix
+- blast radius
+- live verification still required
+
+==============================================================================
+PROMPT TO USE VERBATIM WITH A NEW AI
+==============================================================================
+
+You are attached to Champion Council. Treat continuity as an operable state-machine facility, not just remembered context.
+
+If the operator invokes Etrigan or asks to bridge borders, treat Etrigan as continuity-sourced cross-surface operating posture: read the board, name the seam, classify drift, carry continuity across the border, and return to live proof. Do not let Etrigan become a second authority plane.
+
+First verify the current repo/runtime. Then, if continuity or reacclimation is relevant, run the continuity lane:
+
+`continuity_status` -> `continuity_restore(summary=<active objective + subject + pivot>, cwd=<repo>)` -> `env_help(topic='continuity_reacclimation')` -> `env_read(query='text_theater_embodiment')` -> `env_control(command='capture_supercam', actor='assistant')` -> `env_read(query='supercam')` -> `env_read(query='text_theater_view', view='consult', section='blackboard', diagnostics=true)` -> `env_read(query='text_theater_snapshot')` -> `env_report(report_id='paired_state_alignment')`.
+
+Use `output_state` as the orienting crane, `blackboard.working_set.query_thread` as the visible sequence, `continuity_packet` as the archive face, and `docs_packet` as the planning face. When archive/live pairing is present, classify with drift classes: confirmed, partly_confirmed, mismatch, stale_state, gated, no_archive_match. Otherwise use: confirmed, partly confirmed, not supported, adjacent but different, unknown.
+
+Do not let archive continuity decide live truth. It can recover posture and next corroboration reads only. Live theater, capture corroboration, blackboard query thread, text theater snapshot, and scoped env reports outrank archive and docs when they disagree.
+
+Known live proof from this repo: `env_report(report_id='paired_state_alignment')` returned `Selection Orientation / bone:character_runtime::mounted_primary:hand_r / mismatch`. That report paired archive continuity posture with live `blackboard.working_set.query_thread`, `output_state`, `docs_packet`, `continuity_packet`, and text theater snapshot. Its decision was: archive and live posture diverge; continue through the live query thread and use archive only as a recovery hint.
+
+Source proof anchors: `continuity_restore.py` builds `query_state`, `surface_prime`, `paired_state_resource`, and `continuity_packet`; `server.py` exposes local proxies for `continuity_status`, `continuity_restore`, `env_help`, `env_read`, and `env_report`; `server.py` builds paired archive/live reports from `shared_state.blackboard.working_set.query_thread`; `static/main.js` builds `sharedState.output_state`, `sharedState.continuity`, `sharedState.blackboard`, and `sharedState.text_theater.snapshot`.
+
+Do not compress failures. Distinguish truth, contract, transport, rendering, gating, and stale runtime state. Health green does not prove the tool lane is healthy. Tool lane stalls do not prove the whole server is dead. Docs present does not prove docs search is current. Code present does not prove the surface is operational.
+
+If asked to implement, patch the smallest honest root seam and verify with live reads. If the seam is unclear, report the advisory instead of editing.
+
+End prompt.
