@@ -1581,6 +1581,7 @@
                 console.log("🌊 Matrix Rain Advanced Visual Control Unit initialized");
             }
         };
+        window.MatrixRainEngine = MatrixRainEngine;
 
         // === GLOBAL FUNCTIONS FOR BUTTON INTERACTIONS ===
         function setRainPattern(pattern, buttonElement) { MatrixRainEngine.setRainPattern(pattern, buttonElement); }
@@ -3693,7 +3694,13 @@
 
         function applyContinuumSpeechRain(payload) {
             const text = String((payload && payload.text) || "").trim();
-            if (!text || !window.MatrixRainEngine) return;
+            if (!text || !window.MatrixRainEngine) {
+                postContinuumWallpaperReceipt("speech-rain", false, {
+                    reason: !text ? "empty_text" : "matrix_engine_unavailable",
+                    event_id: payload && payload.event_id
+                });
+                return false;
+            }
             const glyphs = continuumTextToGlyphs(text);
             const hash = continuumTextHash(text);
             const config = MatrixRainEngine.rainConfig;
@@ -3734,6 +3741,18 @@
             if (sizeDisplay) sizeDisplay.textContent = `${config.fontSize}px`;
             updateRainConfig();
             MatrixRainEngine.logActivity(`Continuum speech rain armed: ${glyphs.slice(0, 44)}`, "success");
+            postContinuumWallpaperReceipt("speech-rain", true, {
+                event_id: payload && payload.event_id,
+                textLength: text.length,
+                glyphPreview: glyphs.slice(0, 44),
+                config: {
+                    pattern: config.pattern,
+                    direction: config.direction,
+                    fontSize: config.fontSize,
+                    primaryColor: config.primaryColor
+                }
+            });
+            return true;
         }
 
         function continuumObject(value) {
@@ -3751,6 +3770,60 @@
             if (typeof value === "boolean") return value;
             if (value === undefined || value === null || value === "") return fallback;
             return ["1", "true", "yes", "on", "enabled", "open", "show"].includes(String(value).trim().toLowerCase());
+        }
+
+        function postContinuumWallpaperReceipt(kind, ok, detail = {}) {
+            const receipt = {
+                type: "continuum:wallpaper-receipt",
+                kind,
+                ok: Boolean(ok),
+                state: ok ? "iframe_applied" : "iframe_rejected",
+                event_id: detail.event_id || "",
+                detail,
+                ts: Date.now()
+            };
+            try {
+                window.parent?.postMessage(receipt, "*");
+            } catch {}
+            try {
+                window.localStorage?.setItem("continuum.wallpaperIframeReceipt.v1", JSON.stringify(receipt));
+            } catch {}
+            return receipt;
+        }
+
+        function continuumPatternName(value) {
+            const raw = String(value || "").trim().toLowerCase();
+            const aliases = {
+                rain: "classic",
+                matrix: "classic",
+                green: "classic",
+                prism: "pentad",
+                wave: "harmonic",
+                waves: "harmonic",
+                particle: "particles"
+            };
+            return aliases[raw] || raw;
+        }
+
+        function continuumControlValue(id, fallback = "") {
+            const el = document.getElementById(id);
+            if (!el || el.value === undefined || el.value === null || el.value === "") return fallback;
+            return el.value;
+        }
+
+        function continuumWallpaperConfigSnapshot(appliedSettings = {}) {
+            const config = window.MatrixRainEngine && MatrixRainEngine.rainConfig ? MatrixRainEngine.rainConfig : {};
+            return {
+                pattern: config.pattern || continuumPatternName(appliedSettings.pattern) || "",
+                direction: config.direction || continuumControlValue("rainDirection", appliedSettings.direction || appliedSettings.rainDirection || ""),
+                fontSize: config.fontSize || continuumControlValue("characterSize", appliedSettings.fontSize || appliedSettings.characterSize || ""),
+                primaryColor: config.primaryColor || continuumControlValue("primaryColor", appliedSettings.primaryColor || ""),
+                secondaryColor: config.secondaryColor || continuumControlValue("secondaryColor", appliedSettings.secondaryColor || ""),
+                speed: config.speed || continuumControlValue("rainSpeed", appliedSettings.speed || appliedSettings.rainSpeed || ""),
+                intensity: config.intensity || continuumControlValue("rainIntensity", appliedSettings.intensity || appliedSettings.rainIntensity || ""),
+                density: config.density || continuumControlValue("rainDensity", appliedSettings.density || appliedSettings.rainDensity || ""),
+                canvasOpacity: matrixCanvas ? getComputedStyle(matrixCanvas).opacity : ""
+            };
         }
 
         function setControlValue(id, value, after) {
@@ -3827,7 +3900,7 @@
                 changed = true;
             }
             if (settings.pattern) {
-                setRainPattern(String(settings.pattern).toLowerCase(), null);
+                setRainPattern(continuumPatternName(settings.pattern), null);
                 changed = true;
             }
             if (settings.primaryColor) changed = setControlValue("primaryColor", settings.primaryColor, updateRainColors) || changed;
@@ -3914,7 +3987,15 @@
             if (command && window.MatrixRainEngine) {
                 MatrixRainEngine.logActivity(`Continuum wallpaper command: ${command}`, "info");
             }
-            return Boolean(data.text || command || changed);
+            const ok = Boolean(data.text || command || changed);
+            postContinuumWallpaperReceipt("wallpaper-control", ok, {
+                event_id: data.event_id || "",
+                command,
+                settingsKeys: Object.keys(settings),
+                appliedSettings: settings,
+                config: continuumWallpaperConfigSnapshot(settings)
+            });
+            return ok;
         }
 
         window.addEventListener("message", (event) => {
@@ -3931,6 +4012,23 @@
 
         window.applyContinuumSpeechRain = applyContinuumSpeechRain;
         window.applyContinuumWallpaperControl = applyContinuumWallpaperControl;
+        window.continuumWallpaperProbe = function() {
+            const canvas = document.getElementById("matrix-canvas") || document.querySelector("canvas");
+            let receipt = {};
+            try { receipt = JSON.parse(window.localStorage?.getItem("continuum.wallpaperIframeReceipt.v1") || "{}"); } catch {}
+            return {
+                ready: Boolean(window.MatrixRainEngine),
+                canvas_present: Boolean(canvas),
+                canvas_width: canvas ? canvas.width : 0,
+                canvas_height: canvas ? canvas.height : 0,
+                canvas_display: canvas ? getComputedStyle(canvas).display : "",
+                canvas_opacity: canvas ? getComputedStyle(canvas).opacity : "",
+                last_receipt: receipt,
+                config: continuumWallpaperConfigSnapshot(receipt?.detail?.appliedSettings || {})
+            };
+        };
+
+        postContinuumWallpaperReceipt("ready", true, window.continuumWallpaperProbe());
 
         
 

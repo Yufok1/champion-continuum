@@ -63,6 +63,10 @@ _NATIVE_TOOL_SPECS: dict[str, dict[str, Any]] = {
         "description": "Read provider posture when available; otherwise report that app routing owns providers.",
         "args": [],
     },
+    "continuum_provider_catalog": {
+        "description": "Read HF-endorsed Inference Provider catalog, routing policy, and free-credit posture.",
+        "args": [],
+    },
     "continuum_faculties": {
         "description": "Read native faculty posture and which faculties need MCP/backends.",
         "args": [],
@@ -372,7 +376,8 @@ def _native_wallpaper_state(root: str | Path) -> dict[str, Any]:
         "speech_rain_ready": True,
         "control_contract": {
             "types": ["continuum:speech-rain", "continuum:wallpaper-control"],
-            "transport": "in-process native relay -> deck event log -> browser postMessage",
+            "transport": "in-process native relay -> deck event log -> deck timer -> browser postMessage -> iframe receipt",
+            "truth_boundary": "Native tool success means the command was queued. Rendered/applied truth requires a browser bridge receipt or the deck's Probe Wallpaper Bridge readout.",
             "tools": ["native.continuum_wallpaper_text", "native.continuum_wallpaper_control", "native.continuum_wallpaper_preset"],
             "event_log": str(_event_log_path(root)),
             "message_types": ["continuum:speech-rain", "continuum:wallpaper-control"],
@@ -382,6 +387,8 @@ def _native_wallpaper_state(root: str | Path) -> dict[str, Any]:
                 "hueReactivity", "saturationGain", "brightnessDepth", "audioReactive", "audioReverse",
                 "audioDiagonals", "autoOrchestrator", "reverseFlow", "settingsPanel", "canvasOpacity",
             ],
+            "pattern_values": ["classic", "rainbow", "pentad", "chaos", "harmonic", "particles"],
+            "pattern_aliases": {"rain": "classic", "matrix": "classic", "prism": "pentad", "waves": "harmonic"},
             "commands": [
                 "chaos_once", "toggle_audio", "audio_on", "audio_off", "auto_on", "auto_off",
                 "reverse_flow", "settings_open", "settings_minimize", "settings_close",
@@ -511,6 +518,14 @@ def _execute_native_tool(continuum: Continuum, tool_name: str, arguments: dict[s
         if provider_state is None:
             return _unsupported_native(tool_name, f"Provider registry is not importable in this process: {error}")
         result = provider_state()
+        if isinstance(result, dict):
+            result = {"status": "ok", **result}
+        return {"kind": "tool", "verb": f"native.{tool_name}", "ok": True, "result": result}
+    if tool_name == "continuum_provider_catalog":
+        provider_catalog, error = _optional_facility_callable("continuum_provider_registry", "provider_catalog_state")
+        if provider_catalog is None:
+            return _unsupported_native(tool_name, f"Provider catalog is not importable in this process: {error}")
+        result = provider_catalog()
         if isinstance(result, dict):
             result = {"status": "ok", **result}
         return {"kind": "tool", "verb": f"native.{tool_name}", "ok": True, "result": result}
@@ -647,7 +662,13 @@ def _execute_native_tool(continuum: Continuum, tool_name: str, arguments: dict[s
             "kind": "tool",
             "verb": f"native.{tool_name}",
             "ok": True,
-            "result": {"status": "ok", "event": event, "browser_command": {"function": "window.continuumWallpaperCommand", "payload": payload}},
+            "result": {
+                "status": "queued",
+                "render_confirmed": False,
+                "truth_boundary": "Event was queued for the deck/browser bridge; do not claim a visible wallpaper change until a browser receipt/probe confirms it.",
+                "event": event,
+                "browser_command": {"function": "window.continuumWallpaperCommand", "payload": payload},
+            },
         }
     if tool_name == "continuum_wallpaper_control":
         payload = _wallpaper_control_payload(
@@ -664,7 +685,13 @@ def _execute_native_tool(continuum: Continuum, tool_name: str, arguments: dict[s
             "kind": "tool",
             "verb": f"native.{tool_name}",
             "ok": True,
-            "result": {"status": "ok", "event": event, "browser_command": {"function": "window.continuumWallpaperCommand", "payload": payload}},
+            "result": {
+                "status": "queued",
+                "render_confirmed": False,
+                "truth_boundary": "Event was queued for the deck/browser bridge; do not claim a visible wallpaper change until a browser receipt/probe confirms it.",
+                "event": event,
+                "browser_command": {"function": "window.continuumWallpaperCommand", "payload": payload},
+            },
         }
     if tool_name == "continuum_wallpaper_preset":
         preset_name = str(arguments.get("preset") or "council").strip().lower()
@@ -684,7 +711,9 @@ def _execute_native_tool(continuum: Continuum, tool_name: str, arguments: dict[s
             "verb": f"native.{tool_name}",
             "ok": True,
             "result": {
-                "status": "ok",
+                "status": "queued",
+                "render_confirmed": False,
+                "truth_boundary": "Preset event was queued for the deck/browser bridge; do not claim a visible wallpaper change until a browser receipt/probe confirms it.",
                 "preset": preset_name if preset_name in presets else "council",
                 "available_presets": sorted(presets),
                 "event": event,
@@ -794,30 +823,112 @@ def _split_outside_delimiters(text: str, delimiter: str) -> list[str]:
     return parts
 
 
+def _looks_like_key_assignment(text: str, start: int) -> bool:
+    i = start
+    n = len(text)
+    while i < n and text[i].isspace():
+        i += 1
+    if i >= n or not (text[i].isalpha() or text[i] == "_"):
+        return False
+    i += 1
+    while i < n and (text[i].isalnum() or text[i] in "_-."):
+        i += 1
+    while i < n and text[i].isspace():
+        i += 1
+    return i < n and text[i] == "="
+
+
+def _split_kv_assignments(text: str) -> list[tuple[str, str]]:
+    """Split loose key=value text while preserving quoted and JSON values."""
+    pairs: list[tuple[str, str]] = []
+    s = str(text or "").strip()
+    i = 0
+    n = len(s)
+    openers = {"{": "}", "[": "]", "(": ")"}
+    closers = set(openers.values())
+    while i < n:
+        while i < n and (s[i].isspace() or s[i] == ","):
+            i += 1
+        key_start = i
+        if i >= n or not (s[i].isalpha() or s[i] == "_"):
+            break
+        i += 1
+        while i < n and (s[i].isalnum() or s[i] in "_-."):
+            i += 1
+        key = s[key_start:i].strip()
+        while i < n and s[i].isspace():
+            i += 1
+        if i >= n or s[i] != "=":
+            break
+        i += 1
+        while i < n and s[i].isspace():
+            i += 1
+        val_start = i
+        quote: str | None = None
+        stack: list[str] = []
+        while i < n:
+            ch = s[i]
+            if quote:
+                if ch == "\\":
+                    i += 2
+                    continue
+                if ch == quote:
+                    quote = None
+                i += 1
+                continue
+            if ch in ("'", '"'):
+                quote = ch
+                i += 1
+                continue
+            if ch in openers:
+                stack.append(openers[ch])
+                i += 1
+                continue
+            if ch in closers and stack and ch == stack[-1]:
+                stack.pop()
+                i += 1
+                continue
+            if not stack:
+                if ch == ",":
+                    break
+                if ch.isspace() and _looks_like_key_assignment(s, i + 1):
+                    break
+            i += 1
+        pairs.append((key, s[val_start:i].strip()))
+        if i < n and s[i] == ",":
+            i += 1
+    return pairs
+
+
+def _coerce_kv_value(val: str) -> Any:
+    if val.lower() == "true":
+        return True
+    if val.lower() == "false":
+        return False
+    if val.lower() in {"none", "null"}:
+        return None
+    if (val.startswith('"') and val.endswith('"')) or (val.startswith("'") and val.endswith("'")):
+        return val[1:-1]
+    if val.startswith(("{", "[")) and val.endswith(("}", "]")):
+        try:
+            return json.loads(val)
+        except Exception:
+            pass
+    if val.isdigit() or (val.startswith("-") and val[1:].isdigit()):
+        return int(val)
+    try:
+        return float(val)
+    except ValueError:
+        return val
+
+
 def _parse_kv_args(args_list: list[str]) -> dict[str, Any]:
     """Parse key=value pairs into a dictionary, preserving JSON values."""
     out = {}
-    pairs: list[str] = []
     for arg in args_list:
-        pairs.extend([p for p in _split_outside_delimiters(str(arg or ""), ",") if "=" in p])
-    for pair in pairs:
-        key, val = pair.split("=", 1)
-        key = key.strip()
-        val = val.strip()
-        if val.lower() == "true":
-            out[key] = True
-        elif val.lower() == "false":
-            out[key] = False
-        elif val.isdigit():
-            out[key] = int(val)
-        else:
-            try:
-                out[key] = float(val)
-            except ValueError:
-                if (val.startswith('"') and val.endswith('"')) or (val.startswith("'") and val.endswith("'")):
-                    out[key] = val[1:-1]
-                else:
-                    out[key] = val
+        for key, val in _split_kv_assignments(str(arg or "")):
+            if key:
+                out[key.strip()] = _coerce_kv_value(val.strip())
     return out
 
 

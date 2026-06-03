@@ -190,10 +190,22 @@ use the in-process fallbacks:
 [[tool: native.continuum_wallpaper_preset | preset=audio | text=AUDIO REACTIVE COUNCIL]]
 ```
 
+Pipe-separated arguments are the clearest form for tool-less agents. The relay
+also tolerates loose `key=value key2=value2` arguments after JSON values, but
+agents should prefer pipes when composing commands by text.
+
+Wallpaper tool success means the command was queued for the deck/browser
+bridge. Visible truth requires the browser receipt shown by **Probe Wallpaper
+Bridge** in the Native Tools tab. Agents should report "queued" unless that
+probe confirms the iframe applied the command.
+
 The settings bridge can steer the same Matrix Rain panel opened with `M`:
 `fontSize`, `colorPreset`, `pattern`, `direction`, `speed`, `intensity`,
 `density`, `audioReactive`, `audioReverse`, `audioDiagonals`,
 `autoOrchestrator`, `reverseFlow`, `settingsPanel`, and `canvasOpacity`.
+Valid Matrix Rain `pattern` values are `classic`, `rainbow`, `pentad`,
+`chaos`, `harmonic`, and `particles`; aliases such as `rain` and `matrix`
+normalize to `classic`.
 
 The wallpaper is embedded in the main page. Use **Wallpaper Blob** on the deck
 to turn it into a draggable, resizable, collapsible Matrix Rain underlay
@@ -250,6 +262,20 @@ You can also launch multiple named HF inference minds:
 A plain double-click auto-names the daemon as `HF-Provider-<number>`. The
 arguments are agent name, provider, model, and optional max tokens. Each one
 gets its own roster heartbeat and capability card.
+
+The provider registry also exposes Hugging Face's integrated Inference Provider
+catalog for tool-less agents:
+
+```text
+[[tool: native.continuum_provider_catalog | ]]
+```
+
+When the MCP sidecar is indexed, the same surface is available as
+`continuum_provider_catalog`. It lists the integrated provider roster, routing
+policies (`auto`, `:fastest`, `:cheapest`, `:preferred`, explicit provider
+suffixes), starter model selectors, and the free-credit boundary. HF routed
+requests can use monthly credits where eligible, but this is not unlimited free
+compute; refresh live pricing/model availability before large batch launches.
 
 **Utility daemon cards:** daemon configs can declare `kind`, `capabilities`,
 `outputs`, `cost_mode`, `risk_level`, `permissions`, and `limits`. The deck and

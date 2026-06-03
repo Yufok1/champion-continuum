@@ -33,7 +33,7 @@ from continuum_music_forge import (
     music_backend_preset_payload,
     music_forge_state,
 )
-from continuum_provider_registry import provider_registry_state
+from continuum_provider_registry import provider_catalog_state, provider_registry_state
 from continuum_translation_faculty import build_translation_faculty_packet, translation_faculty_state
 from continuum_whatsapp_adapter import build_send_intent, build_wallet_intent
 
@@ -186,7 +186,8 @@ def _expressive_wallpaper_state() -> dict[str, Any]:
         "speech_rain_ready": bool(selected and suffix in {".html", ".htm"}),
         "control_contract": {
             "types": ["continuum:speech-rain", "continuum:wallpaper-control"],
-            "transport": "deck postMessage to embedded wallpaper iframe",
+            "transport": "deck event log -> deck timer -> browser postMessage -> embedded wallpaper iframe receipt",
+            "truth_boundary": "Tool success means the command was queued. Rendered/applied truth requires a browser bridge receipt or the deck's Probe Wallpaper Bridge readout.",
             "inputs": [
                 "assistant_text",
                 "council_text",
@@ -202,6 +203,8 @@ def _expressive_wallpaper_state() -> dict[str, Any]:
                 "hueReactivity", "saturationGain", "brightnessDepth", "audioReactive", "audioReverse",
                 "audioDiagonals", "autoOrchestrator", "reverseFlow", "settingsPanel", "canvasOpacity",
             ],
+            "pattern_values": ["classic", "rainbow", "pentad", "chaos", "harmonic", "particles"],
+            "pattern_aliases": {"rain": "classic", "matrix": "classic", "prism": "pentad", "waves": "harmonic"},
             "commands": [
                 "chaos_once", "toggle_audio", "audio_on", "audio_off", "auto_on", "auto_off",
                 "reverse_flow", "settings_open", "settings_minimize", "settings_close",
@@ -290,6 +293,11 @@ def create_mcp(host: str, port: int) -> FastMCP:
         return {"status": "ok", "provider_registry": provider_registry_state()}
 
     @mcp.tool()
+    def continuum_provider_catalog() -> dict[str, Any]:
+        """Read HF Inference Provider catalog, routing policy, and free-credit posture."""
+        return {"status": "ok", "provider_catalog": provider_catalog_state()}
+
+    @mcp.tool()
     def continuum_utility_daemons() -> dict[str, Any]:
         """Read live utility daemon capability cards and safety posture."""
         return load_daemon_registry(CHANNEL)
@@ -324,7 +332,9 @@ def create_mcp(host: str, port: int) -> FastMCP:
             source=source or "mcp-wallpaper",
         )
         return {
-            "status": "ok",
+            "status": "queued",
+            "render_confirmed": False,
+            "truth_boundary": "Event was queued for the deck/browser bridge; do not claim a visible wallpaper change until a browser receipt/probe confirms it.",
             "event": _append_or_raise(event),
             "browser_command": {
                 "function": "window.continuumWallpaperCommand",
@@ -353,7 +363,9 @@ def create_mcp(host: str, port: int) -> FastMCP:
             source=payload["source"],
         )
         return {
-            "status": "ok",
+            "status": "queued",
+            "render_confirmed": False,
+            "truth_boundary": "Event was queued for the deck/browser bridge; do not claim a visible wallpaper change until a browser receipt/probe confirms it.",
             "event": _append_or_raise(event),
             "browser_command": {
                 "function": "window.continuumWallpaperCommand",
@@ -389,7 +401,9 @@ def create_mcp(host: str, port: int) -> FastMCP:
             source=payload["source"],
         )
         return {
-            "status": "ok",
+            "status": "queued",
+            "render_confirmed": False,
+            "truth_boundary": "Preset event was queued for the deck/browser bridge; do not claim a visible wallpaper change until a browser receipt/probe confirms it.",
             "preset": preset_name if preset_name in presets else "council",
             "available_presets": sorted(presets),
             "event": _append_or_raise(event),
@@ -415,7 +429,7 @@ def create_mcp(host: str, port: int) -> FastMCP:
         style: str = "",
         lyrics: str = "",
         language: str = "en-US",
-        duration: str = "30 seconds",
+        duration: str | int | float = "30 seconds",
         avoid: str = "Do not mimic living artists or request a copyrighted song clone.",
     ) -> dict[str, Any]:
         """Build a song prompt/lyrics packet for a music generation backend."""
@@ -424,7 +438,7 @@ def create_mcp(host: str, port: int) -> FastMCP:
             style=style,
             lyrics=lyrics,
             language=language,
-            duration=duration,
+            duration=str(duration),
             avoid=avoid,
         )
 

@@ -169,6 +169,17 @@ Heavier help comes through separate lanes:
   first argument gives it a stable role name. Each daemon writes its own
   heartbeat and capability card, so the council can route work by agent name
   without collapsing them into one provider.
+
+  The provider registry includes the current Hugging Face Inference Providers
+  catalog as a local read surface. Tool-less agents can ask for it with
+  `[[tool: native.continuum_provider_catalog | ]]` or
+  `[[tool: continuum_1.continuum_provider_catalog | ]]` when the MCP sidecar is
+  indexed. The catalog tracks HF's integrated provider roster, routing policies
+  (`auto`, `:fastest`, `:cheapest`, `:preferred`, explicit provider suffixes),
+  starter model selectors, and the free-credit boundary. It is intentionally
+  honest: HF routed requests may use monthly credits where eligible, but that is
+  not unlimited free compute and live pricing/model availability should be
+  refreshed before large batch runs.
 - Music Forge through the local MCP/SSE endpoint at
   `http://127.0.0.1:7872/mcp/sse`. The tools
   `continuum_music_forge_state`, `continuum_music_compose_packet`,
@@ -262,10 +273,24 @@ without a sidecar, use the native forms:
 [[tool: native.continuum_wallpaper_preset | preset=audio | text=AUDIO REACTIVE COUNCIL]]
 ```
 
+Pipe-separated arguments are the clearest form for tool-less agents. The relay
+also tolerates loose `key=value key2=value2` arguments after JSON values, but
+agents should prefer pipes when composing commands by text.
+
+Wallpaper tool success means the command was queued for the browser bridge.
+Do not treat that as visible truth until the deck applies it. Operators can
+click **Probe Wallpaper Bridge** in the Native Tools tab to read the live iframe
+receipt, current pattern, direction, font size, color, and pending-message
+state. This keeps tool-less council agents honest: they should say "queued"
+unless a receipt/probe confirms the render.
+
 Useful `settings_json` keys include `fontSize`, `colorPreset`, `pattern`,
 `direction`, `speed`, `intensity`, `density`, `characterSet`,
 `customCharacters`, `audioReactive`, `audioReverse`, `audioDiagonals`,
 `autoOrchestrator`, `reverseFlow`, `settingsPanel`, and `canvasOpacity`.
+Valid Matrix Rain `pattern` values are `classic`, `rainbow`, `pentad`,
+`chaos`, `harmonic`, and `particles`; common aliases such as `rain` or
+`matrix` are normalized to `classic`.
 Useful commands include `settings_open`, `settings_minimize`, `settings_close`,
 `audio_on`, `audio_off`, `auto_on`, `auto_off`, `reverse_flow`, and
 `chaos_once`. Operators can use the visible **Wallpaper controls** in the

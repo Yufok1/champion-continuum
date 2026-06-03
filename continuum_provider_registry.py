@@ -9,7 +9,94 @@ HF_DEFAULT_PROVIDER = os.environ.get("CONTINUUM_HF_PROVIDER", "auto")
 HF_DEFAULT_MODEL = os.environ.get("CONTINUUM_HF_PROVIDER_MODEL", "openai/gpt-oss-120b")
 
 
+HF_INFERENCE_PROVIDER_CATALOG: list[dict[str, Any]] = [
+    {"id": "cerebras", "label": "Cerebras", "strengths": ["chat_completion_llm"]},
+    {"id": "cohere", "label": "Cohere", "strengths": ["chat_completion_llm", "feature_extraction"]},
+    {"id": "deepinfra", "label": "DeepInfra", "strengths": ["chat_completion_llm", "multimodal_or_media"]},
+    {"id": "fal-ai", "label": "Fal AI", "strengths": ["text_to_image", "text_to_video", "speech_to_text", "image_tools"]},
+    {"id": "featherless-ai", "label": "Featherless AI", "strengths": ["chat_completion_llm", "chat_completion_vlm"]},
+    {"id": "fireworks-ai", "label": "Fireworks", "strengths": ["chat_completion_llm", "chat_completion_vlm"]},
+    {"id": "groq", "label": "Groq", "strengths": ["chat_completion_llm", "speech_to_text"]},
+    {"id": "hf-inference", "label": "HF Inference", "strengths": ["chat_completion_llm", "feature_extraction", "text_to_image", "text_to_video", "speech_to_text"]},
+    {"id": "hyperbolic", "label": "Hyperbolic", "strengths": ["chat_completion_llm", "chat_completion_vlm"]},
+    {"id": "novita", "label": "Novita", "strengths": ["chat_completion_llm", "chat_completion_vlm", "text_to_image"]},
+    {"id": "nscale", "label": "Nscale", "strengths": ["chat_completion_llm", "chat_completion_vlm", "feature_extraction"]},
+    {"id": "ovhcloud", "label": "OVHcloud AI Endpoints", "strengths": ["chat_completion_llm", "feature_extraction"]},
+    {"id": "publicai", "label": "Public AI", "strengths": ["chat_completion_llm"]},
+    {"id": "replicate", "label": "Replicate", "strengths": ["chat_completion_llm", "text_to_image", "text_to_video"]},
+    {"id": "sambanova", "label": "SambaNova", "strengths": ["chat_completion_llm", "chat_completion_vlm"]},
+    {"id": "scaleway", "label": "Scaleway", "strengths": ["chat_completion_llm", "feature_extraction"]},
+    {"id": "together", "label": "Together AI", "strengths": ["chat_completion_llm", "chat_completion_vlm", "text_to_image"]},
+    {"id": "wavespeed", "label": "WaveSpeedAI", "strengths": ["text_to_image", "text_to_video"]},
+    {"id": "zai-org", "label": "Z.ai", "strengths": ["chat_completion_llm", "chat_completion_vlm"]},
+]
+
+
+HF_PROVIDER_STARTER_MODELS: list[dict[str, Any]] = [
+    {
+        "model": "openai/gpt-oss-120b",
+        "role": "general_reasoning_and_forum_observation",
+        "selectors": ["openai/gpt-oss-120b:fastest", "openai/gpt-oss-120b:cheapest", "openai/gpt-oss-120b:sambanova"],
+    },
+    {
+        "model": "deepseek-ai/DeepSeek-R1",
+        "role": "deep_reasoning_candidate",
+        "selectors": ["deepseek-ai/DeepSeek-R1:fastest", "deepseek-ai/DeepSeek-R1:cheapest"],
+    },
+    {
+        "model": "deepseek-ai/DeepSeek-V3-0324",
+        "role": "large_chat_candidate",
+        "selectors": ["deepseek-ai/DeepSeek-V3-0324:fastest", "deepseek-ai/DeepSeek-V3-0324:cheapest"],
+    },
+    {
+        "model": "meta-llama/Llama-4-Maverick-17B-128E-Instruct",
+        "role": "vision_language_candidate",
+        "selectors": ["meta-llama/Llama-4-Maverick-17B-128E-Instruct:sambanova"],
+    },
+    {
+        "model": "black-forest-labs/FLUX.1-dev",
+        "role": "image_generation_candidate",
+        "selectors": ["black-forest-labs/FLUX.1-dev:fastest"],
+    },
+]
+
+
+def provider_catalog_state() -> dict[str, Any]:
+    """Read the current built-in HF Inference Provider catalog posture."""
+    providers = [dict(item) for item in HF_INFERENCE_PROVIDER_CATALOG]
+    return {
+        "schema": "champion-continuum/hf-provider-catalog/v1",
+        "source": "Hugging Face Inference Providers documentation",
+        "source_urls": [
+            "https://huggingface.co/docs/inference-providers/en/index",
+            "https://huggingface.co/docs/inference-providers/en/pricing",
+        ],
+        "provider_count": len(providers),
+        "providers": providers,
+        "routing": {
+            "prefix": HF_PROVIDER_PREFIX,
+            "default_provider": HF_DEFAULT_PROVIDER,
+            "default_model": HF_DEFAULT_MODEL,
+            "policies": ["auto", ":fastest", ":cheapest", ":preferred", ":provider-id"],
+            "examples": [
+                hf_provider_model_id("auto", "openai/gpt-oss-120b"),
+                hf_provider_model_id("sambanova", "openai/gpt-oss-120b"),
+                "openai/gpt-oss-120b:fastest",
+                "openai/gpt-oss-120b:cheapest",
+            ],
+        },
+        "free_credit_posture": {
+            "kind": "monthly_free_credits_or_freemium",
+            "guarantee": "not_unlimited_free",
+            "note": "HF routed requests can use monthly free credits where eligible; live pricing/model availability can change and should be checked before batch use.",
+            "model_catalog_refresh": "GET https://router.huggingface.co/v1/models with HF_TOKEN for live model/provider/pricing data.",
+        },
+        "starter_models": [dict(item) for item in HF_PROVIDER_STARTER_MODELS],
+    }
+
+
 def provider_registry_state() -> dict[str, Any]:
+    catalog = provider_catalog_state()
     return {
         "schema": "champion-continuum/provider-registry/v1",
         "resident_space_model": {
@@ -30,6 +117,12 @@ def provider_registry_state() -> dict[str, Any]:
                 "provider_specific_routing",
                 "speech_or_embedding_lanes_via_future_adapter",
             ],
+            "catalog": {
+                "provider_count": catalog["provider_count"],
+                "providers": catalog["providers"],
+                "starter_models": catalog["starter_models"],
+                "free_credit_posture": catalog["free_credit_posture"],
+            },
             "external_effects_performed": False,
         },
         "external_agents": {

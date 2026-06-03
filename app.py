@@ -57,7 +57,7 @@ from champion_continuum.lattice import LatticeTrace
 from champion_continuum.system_prompts import get_system_prompt
 from continuum_daemon_registry import load_daemon_registry
 from continuum_music_forge import music_forge_state
-from continuum_provider_registry import hf_provider_model_id, parse_provider_model_id, provider_registry_state, run_hf_provider_chat
+from continuum_provider_registry import hf_provider_model_id, parse_provider_model_id, provider_catalog_state, provider_registry_state, run_hf_provider_chat
 from continuum_translation_faculty import build_translation_faculty_packet, translation_faculty_state
 
 try:
@@ -1049,6 +1049,7 @@ def _intent_mode_context(intent_mode: str, state: dict | None = None) -> str:
             "- Treat the answer as a visual/expressive surface request.",
             "- Search continuum_expressive_wallpaper first when you need the contract, then use continuum_wallpaper_text for words, continuum_wallpaper_control for settings/audio/modal commands, or continuum_wallpaper_preset for named looks.",
             "- If native.* wallpaper tools are returned, call them directly. The native wallpaper bridge does not require an indexed MCP sidecar.",
+            "- Wallpaper tool success means queued for the browser bridge, not visibly rendered. Say queued unless a browser receipt or Probe Wallpaper Bridge readout confirms the iframe applied it.",
         ])
     lines.append(f"- Indexed MCP tool count visible to this session: {tool_count}.")
     return "\n".join(lines)
@@ -2654,6 +2655,7 @@ NATIVE_TOOLKIT_SPECS = [
     ("Status", "continuum_settings", [], "Read settings, facilities, providers, privacy posture, and peer/service links."),
     ("Status", "continuum_health", [], "Read local Continuum MCP service health."),
     ("Status", "continuum_providers", [], "Read model/provider routing posture."),
+    ("Status", "continuum_provider_catalog", [], "Read HF Inference Provider catalog, routing policy, and free-credit posture."),
     ("Status", "continuum_faculties", [], "Read translation and cultural bridge faculty readiness."),
     ("Daemons", "continuum_utility_daemons", [], "Read live utility daemon capability cards and safety posture."),
     ("Daemons", "continuum_match_daemons", ["capability", "output", "include_stale"], "Find live utility daemons by capability or output type."),
@@ -4219,7 +4221,8 @@ def _wallpaper_runtime_state() -> dict[str, Any]:
         "speech_rain_ready": bool(selected and suffix in {".html", ".htm"}),
         "control_contract": {
             "types": ["continuum:speech-rain", "continuum:wallpaper-control"],
-            "transport": "postMessage to embedded wallpaper iframe",
+            "transport": "event log -> deck timer -> postMessage to embedded wallpaper iframe -> iframe receipt",
+            "truth_boundary": "Tool success queues a browser command; visible/render truth requires the deck's Probe Wallpaper Bridge receipt.",
             "inputs": ["assistant_text", "council_text", "daemon_directive", "continuum_wallpaper_text", "continuum_wallpaper_control", "continuum_wallpaper_preset"],
             "outputs": ["glyph_rain", "pattern", "direction", "color", "speed", "intensity", "font_size", "audio_reactivity", "settings_modal"],
             "settings_json_keys": [
@@ -4228,6 +4231,8 @@ def _wallpaper_runtime_state() -> dict[str, Any]:
                 "hueReactivity", "saturationGain", "brightnessDepth", "audioReactive", "audioReverse",
                 "audioDiagonals", "autoOrchestrator", "reverseFlow", "settingsPanel", "canvasOpacity",
             ],
+            "pattern_values": ["classic", "rainbow", "pentad", "chaos", "harmonic", "particles"],
+            "pattern_aliases": {"rain": "classic", "matrix": "classic", "prism": "pentad", "waves": "harmonic"},
             "commands": [
                 "chaos_once", "toggle_audio", "audio_on", "audio_off", "auto_on", "auto_off",
                 "reverse_flow", "settings_open", "settings_minimize", "settings_close",
@@ -4821,34 +4826,86 @@ CONTINUUM_WALLPAPER_HEAD = """
     const clean = textOf(text).replace(/\\s+/g, " ").trim();
     if (!clean) return false;
     const frame = wallpaperFrame();
-    if (!frame || !frame.contentWindow) return false;
-    frame.contentWindow.postMessage({
+    const message = {
       type: "continuum:speech-rain",
       source,
       text: clean.slice(0, 2400),
       ts: Date.now()
-    }, "*");
-    document.documentElement.dataset.continuumSpeechRain = "sent";
+    };
+    return window.continuumWallpaperPostMessage(message, "speech-rain");
+  };
+
+  const wallpaperPendingMessages = [];
+  let wallpaperDrainTimer = null;
+
+  function recordWallpaperParentReceipt(kind, data = {}) {
+    const receipt = {
+      kind,
+      ok: data.ok !== false,
+      ts: Date.now(),
+      ...data
+    };
+    const text = JSON.stringify(receipt);
+    document.documentElement.dataset.continuumWallpaperReceipt = text.slice(0, 1200);
+    try { localStorage.setItem("continuum.wallpaperReceipt.v1", text); } catch {}
+    return receipt;
+  }
+
+  function drainWallpaperMessages() {
+    clearTimeout(wallpaperDrainTimer);
+    wallpaperDrainTimer = null;
+    if (!wallpaperPendingMessages.length) return;
+    const pending = wallpaperPendingMessages.splice(0, wallpaperPendingMessages.length);
+    for (const message of pending) {
+      if (!window.continuumWallpaperPostMessage(message, message.type || "queued", false)) {
+        wallpaperPendingMessages.push(message);
+      }
+    }
+    if (wallpaperPendingMessages.length) {
+      wallpaperDrainTimer = setTimeout(drainWallpaperMessages, 500);
+    }
+  }
+
+  window.continuumWallpaperPostMessage = function(message, kind = "wallpaper", allowQueue = true) {
+    const frame = wallpaperFrame();
+    if (!frame || !frame.contentWindow) {
+      if (allowQueue) {
+        wallpaperPendingMessages.push(message);
+        if (!wallpaperDrainTimer) wallpaperDrainTimer = setTimeout(drainWallpaperMessages, 250);
+      }
+      document.documentElement.dataset.continuumWallpaperControl = allowQueue ? "queued" : "missing-frame";
+      recordWallpaperParentReceipt(kind, {
+        ok: false,
+        state: allowQueue ? "queued_waiting_for_iframe" : "missing_iframe",
+        pending: wallpaperPendingMessages.length
+      });
+      return allowQueue;
+    }
+    frame.contentWindow.postMessage(message, "*");
+    document.documentElement.dataset.continuumWallpaperControl = "posted";
+    recordWallpaperParentReceipt(kind, {
+      ok: true,
+      state: "posted_to_iframe",
+      pending: wallpaperPendingMessages.length,
+      message_type: message.type || ""
+    });
     return true;
   };
 
   window.continuumWallpaperControl = function(payload = {}) {
     const data = typeof payload === "string" ? { text: payload } : { ...(payload || {}) };
-    const frame = wallpaperFrame();
-    if (!frame || !frame.contentWindow) return false;
-    frame.contentWindow.postMessage({
+    return window.continuumWallpaperPostMessage({
       type: "continuum:wallpaper-control",
       source: data.source || "wallpaper-control",
       text: textOf(data.text || "").slice(0, 2400),
       mode: data.mode || "",
+      event_id: data.event_id || "",
       command: data.command || "",
       settings: data.settings || {},
       settings_json: data.settings_json || "",
       slot: data.slot || "wallpaper",
       ts: Date.now()
-    }, "*");
-    document.documentElement.dataset.continuumWallpaperControl = "sent";
-    return true;
+    }, "wallpaper-control");
   };
 
   window.continuumWallpaperCommand = function(payload = {}) {
@@ -4863,6 +4920,45 @@ CONTINUUM_WALLPAPER_HEAD = """
     }
     return true;
   };
+
+  window.continuumWallpaperBridgeProbe = function() {
+    const shell = wallpaperShell();
+    const frame = wallpaperFrame();
+    let iframe = {};
+    try {
+      iframe = frame?.contentWindow?.continuumWallpaperProbe?.() || {};
+    } catch (err) {
+      iframe = { error: err?.message || String(err) };
+    }
+    let receipt = {};
+    try { receipt = JSON.parse(localStorage.getItem("continuum.wallpaperReceipt.v1") || "{}"); } catch {}
+    const rect = shell ? shell.getBoundingClientRect() : null;
+    return {
+      shell_present: Boolean(shell),
+      iframe_present: Boolean(frame),
+      iframe_src: frame?.getAttribute("src") || "",
+      iframe_window: Boolean(frame?.contentWindow),
+      active_class: document.documentElement.classList.contains("cc-wallpaper-active"),
+      mode: document.documentElement.dataset.continuumWallpaperMode || "",
+      parent_state: document.documentElement.dataset.continuumWallpaperControl || "",
+      pending_messages: wallpaperPendingMessages.length,
+      shell_rect: rect ? { width: Math.round(rect.width), height: Math.round(rect.height), x: Math.round(rect.x), y: Math.round(rect.y) } : null,
+      last_receipt: receipt,
+      iframe
+    };
+  };
+
+  window.addEventListener("message", (event) => {
+    const data = event && event.data;
+    if (!data || data.type !== "continuum:wallpaper-receipt") return;
+    recordWallpaperParentReceipt(data.kind || "iframe-receipt", {
+      ok: data.ok !== false,
+      state: data.state || "iframe_applied",
+      event_id: data.event_id || "",
+      detail: data.detail || {},
+      pending: wallpaperPendingMessages.length
+    });
+  });
 
   window.continuumToggleWallpaperBlob = function() {
     if (!wallpaperBlobState) wallpaperBlobState = loadWallpaperBlobState();
@@ -5865,6 +5961,7 @@ with gr.Blocks(title=TITLE) as demo:
                             scale=2,
                         )
                         wallpaper_control_send = gr.Button("Send Wallpaper Control", scale=1, variant="primary")
+                    wallpaper_probe = gr.Button("Probe Wallpaper Bridge", size="sm", variant="secondary")
                     wallpaper_status = gr.Markdown("Use this for direct operator text/settings. Tool-less agents can use `[[tool: native.continuum_wallpaper_text | text=...]]`, `[[tool: native.continuum_wallpaper_control | settings_json={...}]]`, or `[[tool: native.continuum_wallpaper_preset | preset=audio]]`; indexed MCP tools are optional.")
                     native_table = gr.Dataframe(
                         headers=["Category", "Tool", "Args", "Description", "Relay Command"],
@@ -5943,7 +6040,7 @@ with gr.Blocks(title=TITLE) as demo:
           const clean = String(text || "").trim();
           if (!clean) return "Enter text first.";
           const ok = window.continuumWallpaperCommand?.({ text: clean, source: "operator-control" });
-          return ok ? "Sent to expressive wallpaper." : "Wallpaper bridge unavailable on this render.";
+          return ok ? "Queued/sent to expressive wallpaper. Use Probe Wallpaper Bridge for render receipt." : "Wallpaper bridge unavailable on this render.";
         }""",
     )
     wallpaper_control_send.click(
@@ -5974,10 +6071,53 @@ with gr.Blocks(title=TITLE) as demo:
             source: "operator-control",
             slot: "wallpaper"
           });
-          return ok ? "Sent wallpaper control." : "Wallpaper bridge unavailable on this render.";
+          return ok ? "Queued/sent wallpaper control. Use Probe Wallpaper Bridge for render receipt." : "Wallpaper bridge unavailable on this render.";
         }""",
     )
-    wallpaper_timer.tick(_latest_wallpaper_event, [wallpaper_seen], [wallpaper_event_payload, wallpaper_seen])
+    wallpaper_probe.click(
+        None,
+        None,
+        [wallpaper_status],
+        js="""() => {
+          const probe = window.continuumWallpaperBridgeProbe?.();
+          if (!probe) return "Wallpaper bridge probe is unavailable on this render.";
+          const ok = probe.shell_present && probe.iframe_present && probe.iframe_window;
+          const receipt = probe.last_receipt || {};
+          return [
+            ok ? "**Wallpaper bridge:** iframe reachable" : "**Wallpaper bridge:** iframe not reachable",
+            "",
+            "- Shell present: `" + probe.shell_present + "`",
+            "- Iframe present: `" + probe.iframe_present + "`",
+            "- Active underlay class: `" + probe.active_class + "`",
+            "- Parent state: `" + (probe.parent_state || "none") + "`",
+            "- Pending messages: `" + probe.pending_messages + "`",
+            "- Last receipt: `" + (receipt.state || "none") + "`",
+            "- Iframe pattern: `" + (probe.iframe?.config?.pattern || "unknown") + "`",
+            "- Iframe direction: `" + (probe.iframe?.config?.direction || "unknown") + "`",
+            "- Iframe font size: `" + (probe.iframe?.config?.fontSize || "unknown") + "`",
+            "- Iframe primary color: `" + (probe.iframe?.config?.primaryColor || "unknown") + "`",
+            "",
+            "```json",
+            JSON.stringify(probe, null, 2).slice(0, 2800),
+            "```"
+          ].join("\\n");
+        }""",
+    )
+    wallpaper_event_flow = wallpaper_timer.tick(_latest_wallpaper_event, [wallpaper_seen], [wallpaper_event_payload, wallpaper_seen])
+    wallpaper_event_flow.then(
+        None,
+        [wallpaper_event_payload],
+        None,
+        js="""(payload) => {
+          if (!payload) return;
+          try {
+            const data = JSON.parse(payload);
+            if (data) window.continuumWallpaperCommand?.(data);
+          } catch (err) {
+            console.warn("Continuum wallpaper event dispatch failed", err);
+          }
+        }""",
+    )
     wallpaper_event_payload.change(
         None,
         [wallpaper_event_payload],
