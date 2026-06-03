@@ -65,7 +65,11 @@ try:
 except Exception:  # Space still boots if the optional gate package is unavailable.
     OracleGate = None
 
-HF_TOKEN = os.environ.get("HF_TOKEN")  # needed for gated models (Gemma, Llama) + quota
+HF_TOKEN = (
+    os.environ.get("HF_TOKEN")
+    or os.environ.get("HUGGINGFACEHUB_API_TOKEN")
+    or os.environ.get("HUGGINGFACE_HUB_TOKEN")
+)  # needed for gated models (Gemma, Llama) + quota
 
 # Curated ZeroGPU menu. Ungated models work out of the box; gated models need
 # the owner to accept the license and set the HF_TOKEN secret.
@@ -94,6 +98,13 @@ MODELS: list[tuple[str, str]] = [
     ("Llama 3.1 8B Instruct - gated", "meta-llama/Llama-3.1-8B-Instruct"),
 ]
 DEFAULT_MODEL = "Qwen/Qwen2.5-7B-Instruct"
+GATED_MODEL_IDS = {
+    "google/gemma-2-2b-it",
+    "google/gemma-3-4b-it",
+    "google/gemma-3-12b-it",
+    "meta-llama/Llama-3.2-3B-Instruct",
+    "meta-llama/Llama-3.1-8B-Instruct",
+}
 INTENT_MODE_CHOICES = [
     "Auto",
     "Plain Conversation",
@@ -143,9 +154,21 @@ _MODEL_CACHE: dict[str, object] = {}
 _ACTIVE_MODEL_ID: str | None = None
 
 
-def _get_tokenizer(model_id: str):
+def _uses_request_hf_token(model_id: str, hf_token: str | None = None) -> bool:
+    return bool(hf_token and model_id in GATED_MODEL_IDS)
+
+
+def _model_hf_token(model_id: str, hf_token: str | None = None) -> str | None:
+    if _uses_request_hf_token(model_id, hf_token):
+        return hf_token
+    return HF_TOKEN
+
+
+def _get_tokenizer(model_id: str, hf_token: str | None = None):
+    if _uses_request_hf_token(model_id, hf_token):
+        return AutoTokenizer.from_pretrained(model_id, token=_model_hf_token(model_id, hf_token))
     if model_id not in _TOK_CACHE:
-        _TOK_CACHE[model_id] = AutoTokenizer.from_pretrained(model_id, token=HF_TOKEN)
+        _TOK_CACHE[model_id] = AutoTokenizer.from_pretrained(model_id, token=_model_hf_token(model_id, hf_token))
     return _TOK_CACHE[model_id]
 
 
@@ -163,13 +186,19 @@ def _maybe_gpu(fn):
 
 
 @_maybe_gpu
-def _gpu_generate(model_id: str, prompt: str) -> str:
+def _gpu_generate(model_id: str, prompt: str, hf_token: str | None = None) -> str:
     global _ACTIVE_MODEL_ID
     # Device-aware: CUDA when present (HF ZeroGPU lights it up inside this function),
     # CPU for the local cockpit. Same code path, both runtimes.
     device = "cuda" if torch.cuda.is_available() else "cpu"
     dtype = torch.bfloat16 if device == "cuda" else torch.float32
-    if model_id not in _MODEL_CACHE:
+    request_scoped_token = _uses_request_hf_token(model_id, hf_token)
+    token = _model_hf_token(model_id, hf_token)
+    if request_scoped_token:
+        model = AutoModelForCausalLM.from_pretrained(
+            model_id, dtype=dtype, token=token
+        ).to(device)
+    elif model_id not in _MODEL_CACHE:
         for cached_id in list(_MODEL_CACHE):
             del _MODEL_CACHE[cached_id]
         _ACTIVE_MODEL_ID = None
@@ -181,24 +210,32 @@ def _gpu_generate(model_id: str, prompt: str) -> str:
             except Exception:
                 pass
         _MODEL_CACHE[model_id] = AutoModelForCausalLM.from_pretrained(
-            model_id, dtype=dtype, token=HF_TOKEN
+            model_id, dtype=dtype, token=token
         ).to(device)
         _ACTIVE_MODEL_ID = model_id
-    model = _MODEL_CACHE[model_id]
-    tok = _get_tokenizer(model_id)
-    inputs = tok(prompt, return_tensors="pt").to(device)
-    out = model.generate(
-        **inputs,
-        max_new_tokens=220,
-        do_sample=True,
-        temperature=0.3,
-        top_p=0.9,
-        pad_token_id=tok.pad_token_id or tok.eos_token_id,
-        stop_strings=["]]"],   # halt at the command boundary: no fabricated results/turns
-        tokenizer=tok,
-    )
-    gen = out[0, inputs["input_ids"].shape[1]:]
-    return tok.decode(gen, skip_special_tokens=True).strip()
+    else:
+        model = _MODEL_CACHE[model_id]
+    try:
+        tok = _get_tokenizer(model_id, hf_token=hf_token)
+        inputs = tok(prompt, return_tensors="pt").to(device)
+        out = model.generate(
+            **inputs,
+            max_new_tokens=220,
+            do_sample=True,
+            temperature=0.3,
+            top_p=0.9,
+            pad_token_id=tok.pad_token_id or tok.eos_token_id,
+            stop_strings=["]]"],   # halt at the command boundary: no fabricated results/turns
+            tokenizer=tok,
+        )
+        gen = out[0, inputs["input_ids"].shape[1]:]
+        return tok.decode(gen, skip_special_tokens=True).strip()
+    finally:
+        if request_scoped_token:
+            del model
+            gc.collect()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
 
 
 def _prep_messages(messages: list[dict]) -> list[dict]:
@@ -842,9 +879,9 @@ def run_model(model_id: str, messages: list[dict], hf_token: str | None = None) 
         return _cli_brain_relay(messages)
     if parse_provider_model_id(model_id):
         return run_hf_provider_chat(model_id, _prep_messages(messages), token_override=hf_token)
-    tok = _get_tokenizer(model_id)
+    tok = _get_tokenizer(model_id, hf_token=hf_token)
     prompt = tok.apply_chat_template(_prep_messages(messages), add_generation_prompt=True, tokenize=False)
-    return _gpu_generate(model_id, prompt)
+    return _gpu_generate(model_id, prompt, hf_token=hf_token)
 
 
 def _route_model(model_id: str, step: int) -> tuple[str, str]:
@@ -2544,11 +2581,9 @@ def runtime_settings_markdown() -> str:
     agent_names = ", ".join(str(item.get("agent") or item.get("name") or item) for item in agents) if agents else "none"
     auth_line = (
         "HF login is available in the model controls; provider calls use the signed-in user token first."
-        if RUNNING_ON_HF_SPACE and not CLI_BRAIN
-        else "HF login appears on the Space; local provider auth uses HF_TOKEN or HUGGINGFACE_HUB_TOKEN."
+        if not CLI_BRAIN
+        else "Local CLI-brain mode is active; the connected CLI agent is the brain."
     )
-    if CLI_BRAIN:
-        auth_line = "Local CLI-brain mode is active; the connected CLI agent is the brain."
     daemons = daemon_registry.get("daemons") or []
     daemon_names = ", ".join(
         f"{item.get('agent')}:{item.get('kind')}"
@@ -4366,7 +4401,7 @@ _CONTINUUM_FOOTER_BOOTSTRAP = json.dumps(
         "auth": {
             "mode": "huggingface_space_oauth" if RUNNING_ON_HF_SPACE and not CLI_BRAIN else ("cli_brain" if CLI_BRAIN else "resident_model_or_provider"),
             "hf_token_present": bool(HF_TOKEN),
-            "login_button_visible": bool(RUNNING_ON_HF_SPACE and not CLI_BRAIN),
+            "login_button_visible": bool(not CLI_BRAIN),
         },
         "provider": {
             "default_provider": provider_registry_state()["huggingface_inference_providers"]["default_provider"],
@@ -5850,10 +5885,7 @@ with gr.Blocks(title=TITLE) as demo:
                     gr.Markdown("**Brain:** CLI relay — answered live by the agent at the channel.")
                 else:
                     model_dd = gr.Dropdown(choices=MODELS, value=DEFAULT_MODEL, label=MODEL_LABEL, elem_id="model-picker", scale=2)
-                    if RUNNING_ON_HF_SPACE:
-                        hf_login = gr.LoginButton(value="Sign in with Hugging Face", size="sm", scale=1)
-                    else:
-                        gr.Markdown("HF login appears on the Hugging Face Space. Local provider auth uses an HF token env var.")
+                    hf_login = gr.LoginButton(value="Sign in with Hugging Face", size="sm", scale=1)
             mcp_url = gr.Textbox(
                 label="One-off MCP/SSE service URL",
                 placeholder="https://.../mcp/sse",
