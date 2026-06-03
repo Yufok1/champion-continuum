@@ -220,6 +220,7 @@ def _prep_messages(messages: list[dict]) -> list[dict]:
 BRAIN_DIR = Path(__file__).parent / "cli_brain_channel"
 BRAIN_DIR.mkdir(exist_ok=True)
 os.environ.setdefault("GRADIO_TEMP_DIR", str(BRAIN_DIR / "gradio_tmp"))
+os.environ.setdefault("CONTINUUM_EVENT_LOG", str(BRAIN_DIR / "continuum_link_events.jsonl"))
 # Forum roster: one presence file per mind, each agent beats its own heartbeat.
 CONNECTED_DIR = BRAIN_DIR / "connected"
 if CLI_BRAIN:
@@ -2706,8 +2707,10 @@ def native_toolkit_surface() -> tuple[str, list[list[str]]]:
             if not args:
                 relay = f"[[tool: {tool_name} | ]]"
         else:
-            tool_name = f"{name} (summon)"
-            relay = f"[[tools: search | {name}]]"
+            tool_name = f"native.{name}"
+            relay = f"[[tool: native.{name} | " + ", ".join(f"{arg}=" for arg in args) + "]]"
+            if not args:
+                relay = f"[[tool: native.{name} | ]]"
         rows.append([
             category,
             tool_name,
@@ -2717,7 +2720,7 @@ def native_toolkit_surface() -> tuple[str, list[list[str]]]:
         ])
     status = (
         f"Continuum Native Toolkits: {len(rows)} cataloged; {indexed} indexed in the active MCP surface. "
-        "Rows with exact server names can be pasted directly; summon rows search the live tool surface first."
+        "Indexed rows call the MCP sidecar; `native.*` rows use the in-process fallback for tool-less agents."
     )
     if self_index_note:
         status += "\n\n" + self_index_note

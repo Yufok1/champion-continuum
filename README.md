@@ -115,10 +115,13 @@ does not pretend a missing sidecar or missing music backend is live.
 The support rail has two tool views. **Tool Surface** shows whatever MCP/SSE
 services are currently indexed. **Native Tools** is the Continuum-native catalog:
 music, translation, daemons, peer links, wallpaper, memory, and intent tools with
-ready relay commands when the local MCP surface is indexed. On the local desktop
-launcher, Native Tools will try to self-index the local MCP sidecar at
-`http://127.0.0.1:7872/mcp/sse` when the active tool surface is empty; use
-**Refresh Native Tools** if the sidecar was still starting when the page loaded.
+ready relay commands. Indexed rows call the MCP sidecar. If the sidecar is not
+available, rows fall back to direct `native.*` relay commands handled in process,
+so tool-less agents still get useful results instead of a zero-tool dead end. On
+the local desktop launcher, Native Tools will also try to self-index the local
+MCP sidecar at `http://127.0.0.1:7872/mcp/sse` when the active tool surface is
+empty; use **Refresh Native Tools** if the sidecar was still starting when the
+page loaded.
 
 The main page exposes five **Continuum MCP/SSE service** boxes. Paste local or
 remote Continuum MCP URLs there, for example `http://127.0.0.1:7872/mcp/sse`,
@@ -237,9 +240,11 @@ expressive renderer facility. Assistant and council replies are sent to the
 embedded wallpaper as `continuum:speech-rain` messages, so the actual words can
 roll through the background while color, speed, direction, pattern, density,
 and intensity shift from the text itself. Agents can inspect this contract
-through the MCP tool `continuum_expressive_wallpaper` and can queue explicit
-wallpaper text with `continuum_wallpaper_text`. Operators can use the visible
-**Wallpaper text controls** in the Native Tools tab for direct speech-rain text.
+through `continuum_expressive_wallpaper` and can queue explicit wallpaper text
+with `continuum_wallpaper_text`. On hosted Spaces or any run without a sidecar,
+use `[[tool: native.continuum_wallpaper_text | text=HELLO]]`. Operators can use
+the visible **Wallpaper text controls** in the Native Tools tab for direct
+speech-rain text.
 
 The wallpaper is part of the main page. It does not require a separate side
 window. Click **Wallpaper Blob** to turn the Matrix Rain background into a
