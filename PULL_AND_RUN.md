@@ -96,7 +96,10 @@ indexed.
 Use **Native Tools** in the support rail for Continuum's own toolkits. It is
 separate from the generic **Tool Surface**: Tool Surface reflects whatever
 MCP/SSE services are indexed, while Native Tools keeps the built-in Continuum
-facilities summonable with ready relay commands.
+facilities summonable with ready relay commands. On the local launcher, Native
+Tools tries to self-index the local MCP sidecar at
+`http://127.0.0.1:7872/mcp/sse` when the active tool surface is empty. If the
+sidecar was still starting when the page loaded, click **Refresh Native Tools**.
 
 The local service URL to try first is:
 
@@ -167,7 +170,10 @@ Wallpaper/background media is optional. Drop an export at
 `CONTINUUM_WALLPAPER_MEDIA` to a local file path or URL before launch.
 HTML wallpapers receive council speech as `continuum:speech-rain`, making
 assistant replies drive rolling glyphs, color, pattern, direction, and
-intensity in the background.
+intensity in the background. The Native Tools tab also has **Wallpaper text
+controls** for direct operator text, and indexed agents can use
+`continuum_wallpaper_text` to queue speech-rain text through the local MCP
+surface.
 
 The wallpaper is embedded in the main page. Use **Wallpaper Blob** on the deck
 to turn it into a draggable, resizable, collapsible Matrix Rain underlay

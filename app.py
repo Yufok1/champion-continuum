@@ -1230,6 +1230,42 @@ def _active_tool_cache_state() -> dict[str, Any]:
     }
 
 
+def _local_mcp_base_url() -> str:
+    mcp_port = os.environ.get("CONTINUUM_MCP_PORT", "7872")
+    return os.environ.get("CONTINUUM_MCP_URL", f"http://127.0.0.1:{mcp_port}").rstrip("/")
+
+
+def _local_mcp_sse_url() -> str:
+    base = _local_mcp_base_url()
+    if base.endswith("/mcp/sse"):
+        return base
+    if base.endswith("/mcp"):
+        return f"{base}/sse"
+    return f"{base}/mcp/sse"
+
+
+def _maybe_index_local_native_tools() -> str:
+    active = _active_tool_cache_state()
+    if int(active.get("count") or 0) > 0:
+        return ""
+    mcp_port = _safe_int(os.environ.get("CONTINUUM_MCP_PORT", "7872"), 7872)
+    probe = _tcp_service_state(_local_mcp_base_url(), mcp_port)
+    if not probe.get("running"):
+        return f"Local MCP self-index skipped: {probe.get('detail') or 'service not reachable'}."
+    try:
+        root = SHARED_STORE_ROOT
+        root.mkdir(parents=True, exist_ok=True)
+        config = {"mcpServers": {"continuum_local": {"url": _local_mcp_sse_url()}}}
+        (root / "mcp.json").write_text(json.dumps(config, ensure_ascii=False, indent=2), encoding="utf-8")
+        idx = Continuum(root).index_mcp_tools()
+        count = int(idx.get("total") or idx.get("discovered") or 0)
+        if count:
+            return f"Local MCP self-indexed {count} native tools from `{_local_mcp_sse_url()}`."
+        return f"Local MCP self-index reached `{_local_mcp_sse_url()}`, but no tools were listed."
+    except Exception as exc:
+        return f"Local MCP self-index failed: {type(exc).__name__}: {exc}"
+
+
 def _peer_link_state_for_ui() -> dict[str, Any]:
     links = _load_peer_links_for_ui()
     active_tools = _active_tool_cache_state()
@@ -2612,12 +2648,14 @@ def _tool_rows(hits: list[dict]) -> list[list[str]]:
 
 
 NATIVE_TOOLKIT_SPECS = [
+    ("Status", "continuum_state", [], "Read Continuum link/event service state."),
     ("Status", "continuum_settings", [], "Read settings, facilities, providers, privacy posture, and peer/service links."),
     ("Status", "continuum_health", [], "Read local Continuum MCP service health."),
     ("Status", "continuum_providers", [], "Read model/provider routing posture."),
     ("Status", "continuum_faculties", [], "Read translation and cultural bridge faculty readiness."),
     ("Daemons", "continuum_utility_daemons", [], "Read live utility daemon capability cards and safety posture."),
     ("Daemons", "continuum_match_daemons", ["capability", "output", "include_stale"], "Find live utility daemons by capability or output type."),
+    ("Daemons", "continuum_heartbeat", ["component", "status", "slot", "note", "capabilities_json"], "Publish a local component heartbeat event."),
     ("Music", "continuum_music_forge_state", [], "Read Music Forge readiness, output folder, and public music backends."),
     ("Music", "continuum_music_compose_packet", ["idea", "style", "lyrics", "language", "duration", "avoid"], "Build a song prompt and lyrics packet."),
     ("Music", "continuum_music_backend_preset", ["backend", "prompt", "lyrics", "duration", "seed"], "Build a ready-to-call public music backend payload."),
@@ -2628,8 +2666,10 @@ NATIVE_TOOLKIT_SPECS = [
     ("Links", "continuum_links", [], "Read registered peer/service link registry."),
     ("Links", "continuum_slots", [], "List event slots and current slot counts."),
     ("Links", "continuum_events", ["slot", "limit"], "Read recent Continuum events from a slot or all slots."),
+    ("Links", "continuum_post_event", ["kind", "slot", "text", "payload_json", "source"], "Append a redacted local Continuum event for coordination."),
     ("Links", "continuum_create_room", ["room_label", "speaker_label", "listener_label", "source_lang", "target_lang", "relationship_tone"], "Create a local room session and return join paths."),
     ("Wallpaper", "continuum_expressive_wallpaper", [], "Read expressive wallpaper readiness and speech-rain control contract."),
+    ("Wallpaper", "continuum_wallpaper_text", ["text", "mode", "source", "slot"], "Queue text for the expressive wallpaper speech-rain bridge."),
     ("Memory", "continuum_remember", ["text", "tags", "kind"], "Store a durable Continuum memory record."),
     ("Memory", "continuum_search", ["query", "limit"], "Search durable Continuum memory records."),
     ("Memory", "continuum_process_agent_text", ["text", "max_tool_calls"], "Execute relay commands emitted by a tool-less agent."),
@@ -2639,6 +2679,7 @@ NATIVE_TOOLKIT_SPECS = [
 
 
 def native_toolkit_surface() -> tuple[str, list[list[str]]]:
+    self_index_note = _maybe_index_local_native_tools()
     active_by_name: dict[str, dict[str, Any]] = {}
     try:
         payload = json.loads((SHARED_STORE_ROOT / "mcp_tools_active.json").read_text(encoding="utf-8"))
@@ -2678,6 +2719,8 @@ def native_toolkit_surface() -> tuple[str, list[list[str]]]:
         f"Continuum Native Toolkits: {len(rows)} cataloged; {indexed} indexed in the active MCP surface. "
         "Rows with exact server names can be pasted directly; summon rows search the live tool surface first."
     )
+    if self_index_note:
+        status += "\n\n" + self_index_note
     return status, rows
 
 
@@ -4175,6 +4218,41 @@ def _wallpaper_runtime_state() -> dict[str, Any]:
             "mutates_external_state": False,
         },
     }
+
+
+def _latest_wallpaper_event(last_event_id: str = "") -> tuple[str, str]:
+    event_log = BRAIN_DIR / "continuum_link_events.jsonl"
+    last_seen = str(last_event_id or "")
+    if not event_log.exists():
+        return "", last_seen
+    try:
+        lines = event_log.read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError:
+        return "", last_seen
+    for line in reversed(lines[-80:]):
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(event, dict):
+            continue
+        if event.get("kind") != "continuum.wallpaper.text":
+            continue
+        event_id = str(event.get("event_id") or "")
+        if event_id and event_id == last_seen:
+            return "", last_seen
+        payload = event.get("payload") if isinstance(event.get("payload"), dict) else {}
+        text = str(payload.get("text") or "").strip()
+        if not text:
+            continue
+        command = {
+            "text": text[:2400],
+            "mode": str(payload.get("mode") or "rain"),
+            "source": str(payload.get("source") or event.get("source") or "wallpaper-event"),
+            "event_id": event_id,
+        }
+        return json.dumps(command, ensure_ascii=False), event_id or last_seen
+    return "", last_seen
 
 
 def _background_media_html() -> str:
@@ -5717,6 +5795,16 @@ with gr.Blocks(title=TITLE) as demo:
                     native_initial_status, native_initial_rows = native_toolkit_surface()
                     native_refresh = gr.Button("Refresh Native Tools", size="sm")
                     native_status = gr.Markdown(native_initial_status)
+                    gr.Markdown("**Wallpaper text controls**")
+                    with gr.Row(elem_id="wallpaper-control-row"):
+                        wallpaper_text = gr.Textbox(
+                            label="Speech-rain text",
+                            placeholder="Text to send into the expressive wallpaper...",
+                            lines=2,
+                            scale=4,
+                        )
+                        wallpaper_send = gr.Button("Send Wallpaper Text", scale=1, variant="secondary")
+                    wallpaper_status = gr.Markdown("Use this for direct operator text. Agents can use `continuum_wallpaper_text` when the local MCP surface is indexed.")
                     native_table = gr.Dataframe(
                         headers=["Category", "Tool", "Args", "Description", "Relay Command"],
                         datatype=["str", "str", "str", "str", "str"],
@@ -5749,6 +5837,9 @@ with gr.Blocks(title=TITLE) as demo:
                         elem_id="mem-table",
                     )
                     mem_detail = gr.JSON(label="Node informational wealth")
+    wallpaper_seen = gr.State("")
+    wallpaper_event_payload = gr.Textbox(value="", visible=False, elem_id="wallpaper-event-payload")
+    wallpaper_timer = gr.Timer(2.0)
 
     # Wiring
     send_flow = send.click(chat, [box, chatbot, model_dd, intent_mode, mcp_url, session], [chatbot, session, box, timeline_plot, sankey_plot, stage])
@@ -5783,6 +5874,30 @@ with gr.Blocks(title=TITLE) as demo:
     native_refresh.click(native_toolkit_surface, None, [native_status, native_table])
     native_table.select(on_select_tool, [native_table], [native_relay_box])
     native_paste_btn.click(_paste_to_chat, [native_relay_box, box], [box])
+    wallpaper_send.click(
+        None,
+        [wallpaper_text],
+        [wallpaper_status],
+        js="""(text) => {
+          const clean = String(text || "").trim();
+          if (!clean) return "Enter text first.";
+          const ok = window.continuumWallpaperCommand?.({ text: clean, source: "operator-control" });
+          return ok ? "Sent to expressive wallpaper." : "Wallpaper bridge unavailable on this render.";
+        }""",
+    )
+    wallpaper_timer.tick(_latest_wallpaper_event, [wallpaper_seen], [wallpaper_event_payload, wallpaper_seen])
+    wallpaper_event_payload.change(
+        None,
+        [wallpaper_event_payload],
+        None,
+        js="""(payload) => {
+          if (!payload) return;
+          try {
+            const data = JSON.parse(payload);
+            if (data && data.text) window.continuumWallpaperCommand?.(data);
+          } catch {}
+        }""",
+    )
     peer_save.click(
         save_peer_links,
         [peer_link_1, peer_link_2, peer_link_3, peer_link_4, peer_link_5, session],

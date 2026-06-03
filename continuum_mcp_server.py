@@ -97,9 +97,15 @@ def _expressive_wallpaper_state() -> dict[str, Any]:
         "control_contract": {
             "type": "continuum:speech-rain",
             "transport": "deck postMessage to embedded wallpaper iframe",
-            "inputs": ["assistant_text", "council_text", "daemon_directive"],
+            "inputs": ["assistant_text", "council_text", "daemon_directive", "continuum_wallpaper_text"],
             "outputs": ["glyph_rain", "pattern", "direction", "color", "speed", "intensity"],
             "mutates_external_state": False,
+        },
+        "tool_control": {
+            "name": "continuum_wallpaper_text",
+            "event_kind": "continuum.wallpaper.text",
+            "slot": "wallpaper",
+            "note": "Queues text for the local deck wallpaper bridge; no external network effect.",
         },
     }
 
@@ -170,6 +176,39 @@ def create_mcp(host: str, port: int) -> FastMCP:
     def continuum_expressive_wallpaper() -> dict[str, Any]:
         """Read expressive wallpaper readiness and the council speech-rain control contract."""
         return _expressive_wallpaper_state()
+
+    @mcp.tool()
+    def continuum_wallpaper_text(
+        text: str,
+        mode: str = "rain",
+        source: str = "mcp-wallpaper",
+        slot: str = "wallpaper",
+    ) -> dict[str, Any]:
+        """Queue text for the local expressive wallpaper speech-rain bridge."""
+        clean = (text or "").strip()
+        if not clean:
+            return {"status": "error", "error": "text_required"}
+        payload = {
+            "text": clean[:2400],
+            "mode": mode or "rain",
+            "source": source or "mcp-wallpaper",
+        }
+        event = _make_event(
+            {
+                "kind": "continuum.wallpaper.text",
+                "slot": slot or "wallpaper",
+                "payload": payload,
+            },
+            source=source or "mcp-wallpaper",
+        )
+        return {
+            "status": "ok",
+            "event": _append_or_raise(event),
+            "browser_command": {
+                "function": "window.continuumWallpaperCommand",
+                "payload": payload,
+            },
+        }
 
     @mcp.tool()
     def continuum_match_daemons(capability: str = "", output: str = "", include_stale: bool = False) -> dict[str, Any]:
