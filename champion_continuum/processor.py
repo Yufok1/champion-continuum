@@ -128,12 +128,20 @@ _NATIVE_TOOL_SPECS: dict[str, dict[str, Any]] = {
         "args": ["room_label", "speaker_label", "listener_label", "source_lang", "target_lang", "relationship_tone"],
     },
     "continuum_expressive_wallpaper": {
-        "description": "Read expressive wallpaper readiness and speech-rain control contract.",
+        "description": "Read expressive wallpaper readiness and speech-rain/settings control contract.",
         "args": [],
     },
     "continuum_wallpaper_text": {
         "description": "Queue text for the expressive wallpaper speech-rain bridge.",
         "args": ["text", "mode", "source", "slot"],
+    },
+    "continuum_wallpaper_control": {
+        "description": "Queue expressive wallpaper settings, audio-reactive, modal, and orchestration commands.",
+        "args": ["text", "settings_json", "command", "source", "slot"],
+    },
+    "continuum_wallpaper_preset": {
+        "description": "Apply a named expressive wallpaper preset for the council background.",
+        "args": ["preset", "text", "source", "slot"],
     },
     "continuum_remember": {
         "description": "Store a durable Continuum memory record.",
@@ -363,12 +371,111 @@ def _native_wallpaper_state(root: str | Path) -> dict[str, Any]:
         "asset_hint": configured or "deck-selected asset",
         "speech_rain_ready": True,
         "control_contract": {
-            "type": "continuum:speech-rain",
+            "types": ["continuum:speech-rain", "continuum:wallpaper-control"],
             "transport": "in-process native relay -> deck event log -> browser postMessage",
-            "tool": "native.continuum_wallpaper_text",
+            "tools": ["native.continuum_wallpaper_text", "native.continuum_wallpaper_control", "native.continuum_wallpaper_preset"],
             "event_log": str(_event_log_path(root)),
+            "message_types": ["continuum:speech-rain", "continuum:wallpaper-control"],
+            "settings_json_keys": [
+                "fontSize", "characterSize", "pattern", "direction", "primaryColor", "secondaryColor",
+                "speed", "intensity", "density", "characterSet", "customCharacters", "colorPreset",
+                "hueReactivity", "saturationGain", "brightnessDepth", "audioReactive", "audioReverse",
+                "audioDiagonals", "autoOrchestrator", "reverseFlow", "settingsPanel", "canvasOpacity",
+            ],
+            "commands": [
+                "chaos_once", "toggle_audio", "audio_on", "audio_off", "auto_on", "auto_off",
+                "reverse_flow", "settings_open", "settings_minimize", "settings_close",
+            ],
+            "presets": sorted(_wallpaper_preset_settings()),
             "mutates_external_state": False,
         },
+    }
+
+
+def _wallpaper_preset_settings() -> dict[str, dict[str, Any]]:
+    return {
+        "aurora": {
+            "colorPreset": "aurora",
+            "pattern": "harmonic",
+            "direction": "diagonal",
+            "fontSize": 18,
+            "density": 86,
+            "intensity": 78,
+            "speed": 58,
+        },
+        "hyperneon": {
+            "colorPreset": "hyperneon",
+            "pattern": "rainbow",
+            "direction": "toward",
+            "fontSize": 20,
+            "density": 92,
+            "intensity": 92,
+            "speed": 70,
+        },
+        "calm": {
+            "colorPreset": "zen",
+            "pattern": "classic",
+            "direction": "down",
+            "fontSize": 14,
+            "density": 52,
+            "intensity": 45,
+            "speed": 24,
+            "settingsPanel": "minimize",
+        },
+        "presentation": {
+            "colorPreset": "crystal",
+            "pattern": "classic",
+            "direction": "down",
+            "fontSize": 24,
+            "density": 42,
+            "intensity": 64,
+            "speed": 32,
+            "settingsPanel": "minimize",
+        },
+        "audio": {
+            "audioReactive": True,
+            "audioDiagonals": True,
+            "audioReverse": False,
+            "colorPreset": "prism",
+            "fontSize": 16,
+            "density": 88,
+            "intensity": 80,
+        },
+        "council": {
+            "colorPreset": "neon",
+            "pattern": "pentad",
+            "direction": "toward",
+            "fontSize": 18,
+            "density": 90,
+            "intensity": 88,
+            "speed": 62,
+        },
+        "chaos": {
+            "command": "chaos_once",
+            "colorPreset": "bassstorm",
+            "fontSize": 17,
+            "density": 100,
+            "intensity": 95,
+        },
+    }
+
+
+def _wallpaper_control_payload(
+    text: str = "",
+    settings_json: Any = "",
+    command: str = "",
+    source: str = "native-wallpaper-control",
+    slot: str = "wallpaper",
+) -> dict[str, Any]:
+    settings = _native_payload_json(settings_json)
+    clean = str(text or "").strip()
+    return {
+        "text": clean[:2400],
+        "settings": settings,
+        "settings_json": json.dumps(settings, ensure_ascii=False, sort_keys=True) if settings else "",
+        "command": str(command or settings.get("command") or "").strip(),
+        "source": source or "native-wallpaper-control",
+        "slot": slot or "wallpaper",
     }
 
 
@@ -395,7 +502,7 @@ def _execute_native_tool(continuum: Continuum, tool_name: str, arguments: dict[s
             "ok": True,
             "result": {
                 "status": "ok",
-                "in_process": ["memory", "events", "wallpaper_text", "translation_packet", "intent_drafts"],
+                "in_process": ["memory", "events", "wallpaper_text", "wallpaper_control", "translation_packet", "intent_drafts"],
                 "requires_backend": ["music_generation", "hf_space_schema", "provider_calls", "external_sends"],
             },
         }
@@ -542,6 +649,48 @@ def _execute_native_tool(continuum: Continuum, tool_name: str, arguments: dict[s
             "ok": True,
             "result": {"status": "ok", "event": event, "browser_command": {"function": "window.continuumWallpaperCommand", "payload": payload}},
         }
+    if tool_name == "continuum_wallpaper_control":
+        payload = _wallpaper_control_payload(
+            text=str(arguments.get("text") or ""),
+            settings_json=arguments.get("settings_json") or arguments.get("settings") or "",
+            command=str(arguments.get("command") or ""),
+            source=str(arguments.get("source") or "native-wallpaper-control"),
+            slot=str(arguments.get("slot") or "wallpaper"),
+        )
+        if not payload.get("text") and not payload.get("settings") and not payload.get("command"):
+            return {"kind": "tool", "verb": f"native.{tool_name}", "ok": False, "error": "text_settings_or_command_required"}
+        event = _native_event(root, "continuum.wallpaper.control", payload["slot"], payload, payload["source"])
+        return {
+            "kind": "tool",
+            "verb": f"native.{tool_name}",
+            "ok": True,
+            "result": {"status": "ok", "event": event, "browser_command": {"function": "window.continuumWallpaperCommand", "payload": payload}},
+        }
+    if tool_name == "continuum_wallpaper_preset":
+        preset_name = str(arguments.get("preset") or "council").strip().lower()
+        presets = _wallpaper_preset_settings()
+        settings = dict(presets.get(preset_name) or presets["council"])
+        command = str(settings.pop("command", ""))
+        payload = _wallpaper_control_payload(
+            text=str(arguments.get("text") or ""),
+            settings_json=settings,
+            command=command,
+            source=str(arguments.get("source") or f"native-wallpaper-preset:{preset_name}"),
+            slot=str(arguments.get("slot") or "wallpaper"),
+        )
+        event = _native_event(root, "continuum.wallpaper.control", payload["slot"], payload, payload["source"])
+        return {
+            "kind": "tool",
+            "verb": f"native.{tool_name}",
+            "ok": True,
+            "result": {
+                "status": "ok",
+                "preset": preset_name if preset_name in presets else "council",
+                "available_presets": sorted(presets),
+                "event": event,
+                "browser_command": {"function": "window.continuumWallpaperCommand", "payload": payload},
+            },
+        }
     if tool_name == "continuum_remember":
         text = str(arguments.get("text") or "")
         tags = [item.strip() for item in str(arguments.get("tags") or "").split(",") if item.strip()]
@@ -598,11 +747,59 @@ def _tags_from(arg: str) -> list[str]:
     return []
 
 
+def _split_outside_delimiters(text: str, delimiter: str) -> list[str]:
+    parts: list[str] = []
+    buf: list[str] = []
+    quote = ""
+    escape = False
+    depth = 0
+    pairs = {"{": "}", "[": "]", "(": ")"}
+    closing = set(pairs.values())
+    for ch in text or "":
+        if escape:
+            buf.append(ch)
+            escape = False
+            continue
+        if ch == "\\" and quote:
+            buf.append(ch)
+            escape = True
+            continue
+        if quote:
+            buf.append(ch)
+            if ch == quote:
+                quote = ""
+            continue
+        if ch in {"'", '"'}:
+            quote = ch
+            buf.append(ch)
+            continue
+        if ch in pairs:
+            depth += 1
+            buf.append(ch)
+            continue
+        if ch in closing and depth > 0:
+            depth -= 1
+            buf.append(ch)
+            continue
+        if ch == delimiter and depth == 0:
+            part = "".join(buf).strip()
+            if part:
+                parts.append(part)
+            buf = []
+            continue
+        buf.append(ch)
+    part = "".join(buf).strip()
+    if part:
+        parts.append(part)
+    return parts
+
+
 def _parse_kv_args(args_list: list[str]) -> dict[str, Any]:
-    """Parse key=value pairs into a dictionary, with basic type casting."""
+    """Parse key=value pairs into a dictionary, preserving JSON values."""
     out = {}
-    joined = "|".join(args_list)
-    pairs = [p.strip() for p in joined.split(",") if "=" in p]
+    pairs: list[str] = []
+    for arg in args_list:
+        pairs.extend([p for p in _split_outside_delimiters(str(arg or ""), ",") if "=" in p])
     for pair in pairs:
         key, val = pair.split("=", 1)
         key = key.strip()
@@ -617,7 +814,10 @@ def _parse_kv_args(args_list: list[str]) -> dict[str, Any]:
             try:
                 out[key] = float(val)
             except ValueError:
-                out[key] = val
+                if (val.startswith('"') and val.endswith('"')) or (val.startswith("'") and val.endswith("'")):
+                    out[key] = val[1:-1]
+                else:
+                    out[key] = val
     return out
 
 
@@ -626,7 +826,7 @@ def parse_commands(text: str) -> list[dict[str, Any]]:
     commands: list[dict[str, Any]] = []
     for match in _CMD_RE.finditer(text or ""):
         kind = match.group(1).lower()
-        parts = [p.strip() for p in match.group(2).split("|")]
+        parts = [p.strip() for p in _split_outside_delimiters(match.group(2), "|")]
         if not parts or not parts[0]:
             continue
         commands.append({"kind": kind, "verb": parts[0].lower(), "args": parts[1:], "raw": match.group(0)})

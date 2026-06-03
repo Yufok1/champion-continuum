@@ -109,8 +109,9 @@ The **Intent Mode** selector beside the composer lets the operator override the
 next turn's routing without leaving chat. `Auto` infers the route from the
 message. `Translation Bridge`, `Music Forge`, `Resource Audit`, and
 `Expressive Wallpaper` make the selected faculty explicit to the council. Tool
-backed modes still require indexed MCP tools; the selector sharpens routing, it
-does not pretend a missing sidecar or missing music backend is live.
+backed modes first use indexed MCP tools when available, then Continuum-native
+fallbacks where they exist. The selector sharpens routing; it does not pretend a
+missing external backend, provider call, or music-generation service is live.
 
 The support rail has two tool views. **Tool Surface** shows whatever MCP/SSE
 services are currently indexed. **Native Tools** is the Continuum-native catalog:
@@ -125,10 +126,10 @@ page loaded.
 
 Native fallback is not just a label. It can read the in-process provider
 registry, utility-daemon cards, Music Forge readiness, Music Forge backend
-preset payloads, wallpaper text bridge, memory, events, links, and intent
-drafts. Real external actions still stay honest: HF Space schema inspection,
-provider calls, music generation, external sends, and funds movement require the
-corresponding backend/token/operator approval.
+preset payloads, wallpaper text/settings bridge, memory, events, links, and
+intent drafts. Real external actions still stay honest: HF Space schema
+inspection, provider calls, music generation, external sends, and funds movement
+require the corresponding backend/token/operator approval.
 
 The main page exposes five **Continuum MCP/SSE service** boxes. Paste local or
 remote Continuum MCP URLs there, for example `http://127.0.0.1:7872/mcp/sse`,
@@ -248,10 +249,27 @@ embedded wallpaper as `continuum:speech-rain` messages, so the actual words can
 roll through the background while color, speed, direction, pattern, density,
 and intensity shift from the text itself. Agents can inspect this contract
 through `continuum_expressive_wallpaper` and can queue explicit wallpaper text
-with `continuum_wallpaper_text`. On hosted Spaces or any run without a sidecar,
-use `[[tool: native.continuum_wallpaper_text | text=HELLO]]`. Operators can use
-the visible **Wallpaper text controls** in the Native Tools tab for direct
-speech-rain text.
+with `continuum_wallpaper_text`.
+
+The same bridge can also steer the Matrix Rain settings panel opened with `M`.
+Use `continuum_wallpaper_control` for settings/audio/modal commands and
+`continuum_wallpaper_preset` for named looks. On hosted Spaces or any run
+without a sidecar, use the native forms:
+
+```text
+[[tool: native.continuum_wallpaper_text | text=HELLO]]
+[[tool: native.continuum_wallpaper_control | text=GREETINGS | command=settings_minimize | settings_json={"fontSize":24,"colorPreset":"aurora","direction":"toward","density":80}]]
+[[tool: native.continuum_wallpaper_preset | preset=audio | text=AUDIO REACTIVE COUNCIL]]
+```
+
+Useful `settings_json` keys include `fontSize`, `colorPreset`, `pattern`,
+`direction`, `speed`, `intensity`, `density`, `characterSet`,
+`customCharacters`, `audioReactive`, `audioReverse`, `audioDiagonals`,
+`autoOrchestrator`, `reverseFlow`, `settingsPanel`, and `canvasOpacity`.
+Useful commands include `settings_open`, `settings_minimize`, `settings_close`,
+`audio_on`, `audio_off`, `auto_on`, `auto_off`, `reverse_flow`, and
+`chaos_once`. Operators can use the visible **Wallpaper controls** in the
+Native Tools tab for direct text, settings JSON, and commands.
 
 The wallpaper is part of the main page. It does not require a separate side
 window. Click **Wallpaper Blob** to turn the Matrix Rain background into a

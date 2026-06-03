@@ -3736,13 +3736,201 @@
             MatrixRainEngine.logActivity(`Continuum speech rain armed: ${glyphs.slice(0, 44)}`, "success");
         }
 
+        function continuumObject(value) {
+            if (!value) return {};
+            if (typeof value === "object") return value;
+            try {
+                const parsed = JSON.parse(String(value));
+                return parsed && typeof parsed === "object" ? parsed : {};
+            } catch {
+                return {};
+            }
+        }
+
+        function continuumBool(value, fallback = false) {
+            if (typeof value === "boolean") return value;
+            if (value === undefined || value === null || value === "") return fallback;
+            return ["1", "true", "yes", "on", "enabled", "open", "show"].includes(String(value).trim().toLowerCase());
+        }
+
+        function setControlValue(id, value, after) {
+            const el = document.getElementById(id);
+            if (!el || value === undefined || value === null || value === "") return false;
+            el.value = value;
+            if (typeof after === "function") after();
+            return true;
+        }
+
+        function setMatrixModalPanel(mode) {
+            const modal = document.querySelector(".matrix-modal");
+            const minimizeBtn = document.getElementById("minimizeBtn");
+            if (!modal) return false;
+            const clean = String(mode || "").trim().toLowerCase();
+            if (["open", "show", "maximize", "max"].includes(clean)) {
+                modal.style.display = "flex";
+                modal.classList.remove("minimized");
+                if (minimizeBtn) {
+                    minimizeBtn.textContent = "−";
+                    minimizeBtn.title = "Minimize utilities to see matrix rain";
+                }
+                return true;
+            }
+            if (["minimize", "min", "collapse"].includes(clean)) {
+                modal.style.display = "flex";
+                modal.classList.add("minimized");
+                if (minimizeBtn) {
+                    minimizeBtn.textContent = "M +";
+                    minimizeBtn.title = "Press M or click to maximize";
+                }
+                return true;
+            }
+            if (["close", "hide", "off"].includes(clean)) {
+                modal.style.display = "none";
+                return true;
+            }
+            if (clean === "toggle") {
+                if (modal.style.display === "none") {
+                    modal.style.display = "flex";
+                } else {
+                    toggleMatrixModal();
+                }
+                return true;
+            }
+            return false;
+        }
+
+        function setAudioReverseEnabled(enabled) {
+            if (audioReverseEnabled !== Boolean(enabled)) toggleAudioReverse();
+        }
+
+        function setAudioDiagonalsEnabled(enabled) {
+            if (audioDiagonalsEnabled !== Boolean(enabled)) toggleAudioDiagonals();
+        }
+
+        function setReverseFlowState(value) {
+            const wantReverse = typeof value === "string"
+                ? ["reverse", "reversed", "backward", "backwards", "-1", "true", "on"].includes(value.toLowerCase())
+                : Boolean(value);
+            if ((reverseFlowMultiplier === -1) !== wantReverse) toggleReverseFlow();
+        }
+
+        function applyContinuumWallpaperSettings(settings) {
+            if (!settings || !window.MatrixRainEngine) return false;
+            const config = MatrixRainEngine.rainConfig;
+            let changed = false;
+
+            if (settings.settingsPanel !== undefined) changed = setMatrixModalPanel(settings.settingsPanel) || changed;
+            if (settings.panel !== undefined) changed = setMatrixModalPanel(settings.panel) || changed;
+
+            if (settings.colorPreset) {
+                setColorPreset(String(settings.colorPreset).toLowerCase());
+                changed = true;
+            }
+            if (settings.pattern) {
+                setRainPattern(String(settings.pattern).toLowerCase(), null);
+                changed = true;
+            }
+            if (settings.primaryColor) changed = setControlValue("primaryColor", settings.primaryColor, updateRainColors) || changed;
+            if (settings.secondaryColor) changed = setControlValue("secondaryColor", settings.secondaryColor, updateRainColors) || changed;
+            if (settings.speed !== undefined) changed = setControlValue("rainSpeed", clamp(Number(settings.speed), 1, 100), updateRainSpeed) || changed;
+            if (settings.rainSpeed !== undefined) changed = setControlValue("rainSpeed", clamp(Number(settings.rainSpeed), 1, 100), updateRainSpeed) || changed;
+            if (settings.intervalMs !== undefined) {
+                config.speed = clamp(Number(settings.intervalMs), 5, 250);
+                const speedEl = document.getElementById("rainSpeed");
+                if (speedEl) speedEl.value = clamp(101 - config.speed, 1, 100);
+                changed = true;
+            }
+            if (settings.intensity !== undefined) changed = setControlValue("rainIntensity", clamp(Number(settings.intensity), 1, 100), updateRainIntensity) || changed;
+            if (settings.rainIntensity !== undefined) changed = setControlValue("rainIntensity", clamp(Number(settings.rainIntensity), 1, 100), updateRainIntensity) || changed;
+            if (settings.density !== undefined) changed = setControlValue("rainDensity", clamp(Number(settings.density), 1, 100), updateRainDensity) || changed;
+            if (settings.rainDensity !== undefined) changed = setControlValue("rainDensity", clamp(Number(settings.rainDensity), 1, 100), updateRainDensity) || changed;
+            if (settings.fontSize !== undefined) changed = setControlValue("characterSize", clamp(Number(settings.fontSize), 1, 100), updateCharacterSize) || changed;
+            if (settings.characterSize !== undefined) changed = setControlValue("characterSize", clamp(Number(settings.characterSize), 1, 100), updateCharacterSize) || changed;
+            if (settings.direction) changed = setControlValue("rainDirection", settings.direction, updateRainDirection) || changed;
+            if (settings.rainDirection) changed = setControlValue("rainDirection", settings.rainDirection, updateRainDirection) || changed;
+
+            if (settings.customCharacters) {
+                const customInput = document.getElementById("customCharacters");
+                const characterSet = document.getElementById("characterSet");
+                if (customInput && characterSet) {
+                    customInput.value = String(settings.customCharacters).slice(0, 720);
+                    characterSet.value = "custom";
+                    updateCharacterSet();
+                    changed = true;
+                }
+            } else if (settings.characterSet) {
+                changed = setControlValue("characterSet", settings.characterSet, updateCharacterSet) || changed;
+            }
+
+            if (settings.hueReactivity !== undefined) changed = setControlValue("hueReactSlider", clamp(Number(settings.hueReactivity), 50, 200), updateHueReactivity) || changed;
+            if (settings.saturationGain !== undefined) changed = setControlValue("satGainSlider", clamp(Number(settings.saturationGain), 50, 200), updateSaturationGain) || changed;
+            if (settings.brightnessDepth !== undefined) changed = setControlValue("brightDepthSlider", clamp(Number(settings.brightnessDepth), 50, 200), updateBrightnessDepth) || changed;
+
+            if (settings.audioReverse !== undefined) { setAudioReverseEnabled(continuumBool(settings.audioReverse)); changed = true; }
+            if (settings.audioDiagonals !== undefined) { setAudioDiagonalsEnabled(continuumBool(settings.audioDiagonals, true)); changed = true; }
+            if (settings.reverseFlow !== undefined) { setReverseFlowState(settings.reverseFlow); changed = true; }
+            if (settings.autoOrchestrator !== undefined && autoOrchestratorActive !== continuumBool(settings.autoOrchestrator)) {
+                toggleAutoOrchestrator();
+                changed = true;
+            }
+            if (settings.audioReactive !== undefined && audioReactiveActive !== continuumBool(settings.audioReactive)) {
+                toggleAudioReactive();
+                changed = true;
+            }
+            if (settings.canvasOpacity !== undefined && matrixCanvas) {
+                matrixCanvas.style.opacity = String(clamp(Number(settings.canvasOpacity), 0, 1));
+                changed = true;
+            }
+
+            if (changed) {
+                updateRainConfig();
+                MatrixRainEngine.logActivity("Continuum wallpaper settings applied", "success");
+            }
+            return changed;
+        }
+
+        function applyContinuumWallpaperControl(payload) {
+            const data = payload || {};
+            const settings = {
+                ...continuumObject(data.settings_json),
+                ...continuumObject(data.settings),
+            };
+            if (data.text) applyContinuumSpeechRain(data);
+            if (data.mode && !["rain", "display", "text"].includes(String(data.mode).toLowerCase())) {
+                settings.settingsPanel = data.mode;
+            }
+            const command = String(data.command || "").trim().toLowerCase();
+            if (command === "chaos_once") activateChaosRandomizer();
+            if (command === "toggle_audio") toggleAudioReactive();
+            if (command === "audio_on") settings.audioReactive = true;
+            if (command === "audio_off") settings.audioReactive = false;
+            if (command === "auto_on") settings.autoOrchestrator = true;
+            if (command === "auto_off") settings.autoOrchestrator = false;
+            if (command === "reverse_flow") toggleReverseFlow();
+            if (command === "settings_open") settings.settingsPanel = "open";
+            if (command === "settings_minimize") settings.settingsPanel = "minimize";
+            if (command === "settings_close") settings.settingsPanel = "close";
+            const changed = applyContinuumWallpaperSettings(settings);
+            if (command && window.MatrixRainEngine) {
+                MatrixRainEngine.logActivity(`Continuum wallpaper command: ${command}`, "info");
+            }
+            return Boolean(data.text || command || changed);
+        }
+
         window.addEventListener("message", (event) => {
             const data = event && event.data;
-            if (!data || data.type !== "continuum:speech-rain") return;
-            applyContinuumSpeechRain(data);
+            if (!data) return;
+            if (data.type === "continuum:speech-rain") {
+                applyContinuumSpeechRain(data);
+                return;
+            }
+            if (data.type === "continuum:wallpaper-control") {
+                applyContinuumWallpaperControl(data);
+            }
         });
 
         window.applyContinuumSpeechRain = applyContinuumSpeechRain;
+        window.applyContinuumWallpaperControl = applyContinuumWallpaperControl;
 
         
 

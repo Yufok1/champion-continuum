@@ -104,10 +104,10 @@ when the active tool surface is empty. If the sidecar was still starting when
 the page loaded, click **Refresh Native Tools**.
 
 Native fallback can read the in-process provider registry, daemon registry,
-Music Forge readiness, backend preset payloads, wallpaper text bridge, memory,
-events, links, and intent drafts. It does not fake external work: provider
-calls, HF Space schema inspection, real music generation, sends, and wallet
-actions still require the matching backend/token/operator approval.
+Music Forge readiness, backend preset payloads, wallpaper text/settings bridge,
+memory, events, links, and intent drafts. It does not fake external work:
+provider calls, HF Space schema inspection, real music generation, sends, and
+wallet actions still require the matching backend/token/operator approval.
 
 The local service URL to try first is:
 
@@ -178,11 +178,22 @@ Wallpaper/background media is optional. Drop an export at
 `CONTINUUM_WALLPAPER_MEDIA` to a local file path or URL before launch.
 HTML wallpapers receive council speech as `continuum:speech-rain`, making
 assistant replies drive rolling glyphs, color, pattern, direction, and
-intensity in the background. The Native Tools tab also has **Wallpaper text
-controls** for direct operator text, and indexed agents can use
-`continuum_wallpaper_text` to queue speech-rain text through the local MCP
-surface. Without a sidecar, use the in-process fallback:
-`[[tool: native.continuum_wallpaper_text | text=HELLO]]`.
+intensity in the background. The Native Tools tab also has **Wallpaper
+controls** for direct operator text, settings JSON, and commands. Indexed
+agents can use `continuum_wallpaper_text`, `continuum_wallpaper_control`, and
+`continuum_wallpaper_preset` through the local MCP surface. Without a sidecar,
+use the in-process fallbacks:
+
+```text
+[[tool: native.continuum_wallpaper_text | text=HELLO]]
+[[tool: native.continuum_wallpaper_control | text=GREETINGS | command=settings_minimize | settings_json={"fontSize":24,"colorPreset":"aurora","direction":"toward","density":80}]]
+[[tool: native.continuum_wallpaper_preset | preset=audio | text=AUDIO REACTIVE COUNCIL]]
+```
+
+The settings bridge can steer the same Matrix Rain panel opened with `M`:
+`fontSize`, `colorPreset`, `pattern`, `direction`, `speed`, `intensity`,
+`density`, `audioReactive`, `audioReverse`, `audioDiagonals`,
+`autoOrchestrator`, `reverseFlow`, `settingsPanel`, and `canvasOpacity`.
 
 The wallpaper is embedded in the main page. Use **Wallpaper Blob** on the deck
 to turn it into a draggable, resizable, collapsible Matrix Rain underlay

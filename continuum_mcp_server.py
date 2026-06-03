@@ -69,6 +69,96 @@ def _json_object(text: str, field_name: str = "payload_json") -> dict[str, Any]:
     return value
 
 
+def _wallpaper_preset_settings() -> dict[str, dict[str, Any]]:
+    return {
+        "aurora": {
+            "colorPreset": "aurora",
+            "pattern": "harmonic",
+            "direction": "diagonal",
+            "fontSize": 18,
+            "density": 86,
+            "intensity": 78,
+            "speed": 58,
+        },
+        "hyperneon": {
+            "colorPreset": "hyperneon",
+            "pattern": "rainbow",
+            "direction": "toward",
+            "fontSize": 20,
+            "density": 92,
+            "intensity": 92,
+            "speed": 70,
+        },
+        "calm": {
+            "colorPreset": "zen",
+            "pattern": "classic",
+            "direction": "down",
+            "fontSize": 14,
+            "density": 52,
+            "intensity": 45,
+            "speed": 24,
+            "settingsPanel": "minimize",
+        },
+        "presentation": {
+            "colorPreset": "crystal",
+            "pattern": "classic",
+            "direction": "down",
+            "fontSize": 24,
+            "density": 42,
+            "intensity": 64,
+            "speed": 32,
+            "settingsPanel": "minimize",
+        },
+        "audio": {
+            "audioReactive": True,
+            "audioDiagonals": True,
+            "audioReverse": False,
+            "colorPreset": "prism",
+            "fontSize": 16,
+            "density": 88,
+            "intensity": 80,
+        },
+        "council": {
+            "colorPreset": "neon",
+            "pattern": "pentad",
+            "direction": "toward",
+            "fontSize": 18,
+            "density": 90,
+            "intensity": 88,
+            "speed": 62,
+        },
+        "chaos": {
+            "command": "chaos_once",
+            "colorPreset": "bassstorm",
+            "fontSize": 17,
+            "density": 100,
+            "intensity": 95,
+        },
+    }
+
+
+def _wallpaper_control_payload(
+    text: str = "",
+    settings_json: str | dict[str, Any] = "",
+    command: str = "",
+    source: str = "mcp-wallpaper-control",
+    slot: str = "wallpaper",
+) -> dict[str, Any]:
+    if isinstance(settings_json, dict):
+        settings = settings_json
+    else:
+        settings = _json_object(settings_json or "", "settings_json")
+    clean = (text or "").strip()
+    return {
+        "text": clean[:2400],
+        "settings": settings,
+        "settings_json": json.dumps(settings, ensure_ascii=False, sort_keys=True) if settings else "",
+        "command": (command or str(settings.get("command") or "")).strip(),
+        "source": source or "mcp-wallpaper-control",
+        "slot": slot or "wallpaper",
+    }
+
+
 def _append_or_raise(event: dict[str, Any]) -> dict[str, Any]:
     error = _append_event(event)
     if error:
@@ -95,18 +185,50 @@ def _expressive_wallpaper_state() -> dict[str, Any]:
         "kind": "web_wallpaper" if suffix in {".html", ".htm"} else ("video" if suffix in {".webm", ".mp4", ".mov", ".m4v"} else ("image" if selected else "none")),
         "speech_rain_ready": bool(selected and suffix in {".html", ".htm"}),
         "control_contract": {
-            "type": "continuum:speech-rain",
+            "types": ["continuum:speech-rain", "continuum:wallpaper-control"],
             "transport": "deck postMessage to embedded wallpaper iframe",
-            "inputs": ["assistant_text", "council_text", "daemon_directive", "continuum_wallpaper_text"],
-            "outputs": ["glyph_rain", "pattern", "direction", "color", "speed", "intensity"],
+            "inputs": [
+                "assistant_text",
+                "council_text",
+                "daemon_directive",
+                "continuum_wallpaper_text",
+                "continuum_wallpaper_control",
+                "continuum_wallpaper_preset",
+            ],
+            "outputs": ["glyph_rain", "pattern", "direction", "color", "speed", "intensity", "font_size", "audio_reactivity", "settings_modal"],
+            "settings_json_keys": [
+                "fontSize", "characterSize", "pattern", "direction", "primaryColor", "secondaryColor",
+                "speed", "intensity", "density", "characterSet", "customCharacters", "colorPreset",
+                "hueReactivity", "saturationGain", "brightnessDepth", "audioReactive", "audioReverse",
+                "audioDiagonals", "autoOrchestrator", "reverseFlow", "settingsPanel", "canvasOpacity",
+            ],
+            "commands": [
+                "chaos_once", "toggle_audio", "audio_on", "audio_off", "auto_on", "auto_off",
+                "reverse_flow", "settings_open", "settings_minimize", "settings_close",
+            ],
+            "presets": sorted(_wallpaper_preset_settings()),
             "mutates_external_state": False,
         },
-        "tool_control": {
-            "name": "continuum_wallpaper_text",
-            "event_kind": "continuum.wallpaper.text",
-            "slot": "wallpaper",
-            "note": "Queues text for the local deck wallpaper bridge; no external network effect.",
-        },
+        "tool_control": [
+            {
+                "name": "continuum_wallpaper_text",
+                "event_kind": "continuum.wallpaper.text",
+                "slot": "wallpaper",
+                "note": "Queues text for the local deck wallpaper bridge; no external network effect.",
+            },
+            {
+                "name": "continuum_wallpaper_control",
+                "event_kind": "continuum.wallpaper.control",
+                "slot": "wallpaper",
+                "note": "Queues settings, modal, audio-reactive, and orchestration commands.",
+            },
+            {
+                "name": "continuum_wallpaper_preset",
+                "event_kind": "continuum.wallpaper.control",
+                "slot": "wallpaper",
+                "note": "Applies a named preset such as aurora, audio, council, or presentation.",
+            },
+        ],
     }
 
 
@@ -174,7 +296,7 @@ def create_mcp(host: str, port: int) -> FastMCP:
 
     @mcp.tool()
     def continuum_expressive_wallpaper() -> dict[str, Any]:
-        """Read expressive wallpaper readiness and the council speech-rain control contract."""
+        """Read expressive wallpaper readiness and the council speech-rain/settings control contract."""
         return _expressive_wallpaper_state()
 
     @mcp.tool()
@@ -203,6 +325,73 @@ def create_mcp(host: str, port: int) -> FastMCP:
         )
         return {
             "status": "ok",
+            "event": _append_or_raise(event),
+            "browser_command": {
+                "function": "window.continuumWallpaperCommand",
+                "payload": payload,
+            },
+        }
+
+    @mcp.tool()
+    def continuum_wallpaper_control(
+        text: str = "",
+        settings_json: str = "",
+        command: str = "",
+        source: str = "mcp-wallpaper-control",
+        slot: str = "wallpaper",
+    ) -> dict[str, Any]:
+        """Queue expressive wallpaper settings, audio-reactive, modal, and orchestration commands."""
+        payload = _wallpaper_control_payload(text, settings_json, command, source, slot)
+        if not payload.get("text") and not payload.get("settings") and not payload.get("command"):
+            return {"status": "error", "error": "text_settings_or_command_required"}
+        event = _make_event(
+            {
+                "kind": "continuum.wallpaper.control",
+                "slot": payload["slot"],
+                "payload": payload,
+            },
+            source=payload["source"],
+        )
+        return {
+            "status": "ok",
+            "event": _append_or_raise(event),
+            "browser_command": {
+                "function": "window.continuumWallpaperCommand",
+                "payload": payload,
+            },
+        }
+
+    @mcp.tool()
+    def continuum_wallpaper_preset(
+        preset: str = "council",
+        text: str = "",
+        source: str = "mcp-wallpaper-preset",
+        slot: str = "wallpaper",
+    ) -> dict[str, Any]:
+        """Apply a named expressive wallpaper preset."""
+        presets = _wallpaper_preset_settings()
+        preset_name = (preset or "council").strip().lower()
+        settings = dict(presets.get(preset_name) or presets["council"])
+        command = str(settings.pop("command", ""))
+        payload = _wallpaper_control_payload(
+            text=text,
+            settings_json=settings,
+            command=command,
+            source=source or f"mcp-wallpaper-preset:{preset_name}",
+            slot=slot,
+        )
+        event = _make_event(
+            {
+                "kind": "continuum.wallpaper.control",
+                "slot": payload["slot"],
+                "payload": payload,
+            },
+            source=payload["source"],
+        )
+        return {
+            "status": "ok",
+            "preset": preset_name if preset_name in presets else "council",
+            "available_presets": sorted(presets),
             "event": _append_or_raise(event),
             "browser_command": {
                 "function": "window.continuumWallpaperCommand",

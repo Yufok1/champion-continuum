@@ -1047,7 +1047,8 @@ def _intent_mode_context(intent_mode: str, state: dict | None = None) -> str:
     elif mode == "Expressive Wallpaper":
         lines.extend([
             "- Treat the answer as a visual/expressive surface request.",
-            "- Search continuum_wallpaper_text. If native.continuum_wallpaper_text is returned, call it with the requested words. The native wallpaper bridge does not require an indexed MCP sidecar.",
+            "- Search continuum_expressive_wallpaper first when you need the contract, then use continuum_wallpaper_text for words, continuum_wallpaper_control for settings/audio/modal commands, or continuum_wallpaper_preset for named looks.",
+            "- If native.* wallpaper tools are returned, call them directly. The native wallpaper bridge does not require an indexed MCP sidecar.",
         ])
     lines.append(f"- Indexed MCP tool count visible to this session: {tool_count}.")
     return "\n".join(lines)
@@ -2603,7 +2604,7 @@ def runtime_settings_markdown() -> str:
             f"- Active: `{'yes' if wallpaper.get('active') else 'no'}`",
             f"- Asset: `{wallpaper.get('asset') or 'none'}`",
             f"- Council speech rain: `{'ready' if wallpaper.get('speech_rain_ready') else 'unavailable'}`",
-            "- Assistant/council replies can drive glyph rain, color, speed, direction, and intensity from the words themselves.",
+            "- Assistant/council replies can drive glyph rain, color, speed, direction, intensity, font size, modal state, and audio-reactive settings.",
             "",
             "**Runtime**",
             f"- Mode: `{settings.get('mode')}`",
@@ -2669,8 +2670,10 @@ NATIVE_TOOLKIT_SPECS = [
     ("Links", "continuum_events", ["slot", "limit"], "Read recent Continuum events from a slot or all slots."),
     ("Links", "continuum_post_event", ["kind", "slot", "text", "payload_json", "source"], "Append a redacted local Continuum event for coordination."),
     ("Links", "continuum_create_room", ["room_label", "speaker_label", "listener_label", "source_lang", "target_lang", "relationship_tone"], "Create a local room session and return join paths."),
-    ("Wallpaper", "continuum_expressive_wallpaper", [], "Read expressive wallpaper readiness and speech-rain control contract."),
+    ("Wallpaper", "continuum_expressive_wallpaper", [], "Read expressive wallpaper readiness and control contract."),
     ("Wallpaper", "continuum_wallpaper_text", ["text", "mode", "source", "slot"], "Queue text for the expressive wallpaper speech-rain bridge."),
+    ("Wallpaper", "continuum_wallpaper_control", ["text", "settings_json", "command", "source", "slot"], "Queue wallpaper settings, audio-reactive, modal, and orchestration commands."),
+    ("Wallpaper", "continuum_wallpaper_preset", ["preset", "text", "source", "slot"], "Apply a named expressive wallpaper preset."),
     ("Memory", "continuum_remember", ["text", "tags", "kind"], "Store a durable Continuum memory record."),
     ("Memory", "continuum_search", ["query", "limit"], "Search durable Continuum memory records."),
     ("Memory", "continuum_process_agent_text", ["text", "max_tool_calls"], "Execute relay commands emitted by a tool-less agent."),
@@ -2804,7 +2807,7 @@ _TOOL_CALL_RE = re.compile(r"\[\[\s*tool\s*:\s*([^|\]\s]+)", re.IGNORECASE)
 _OPERATOR_ACTION_RE = re.compile(
     r"\b(start|spawn|create|write|edit|delete|remove|restore|import|export|register|download|"
     r"upload|plug|unplug|mutate|persist|bind|activate|run|launch|send|toggle|publish|deploy|push|"
-    r"adjust|update|change|set|queue|display|show|paint|rain)\b",
+    r"adjust|update|change|set|queue|display|show|paint|rain|make|orchestrate|style|animate|control)\b",
     re.IGNORECASE,
 )
 
@@ -4215,10 +4218,20 @@ def _wallpaper_runtime_state() -> dict[str, Any]:
         "kind": "web_wallpaper" if suffix in {".html", ".htm"} else ("video" if suffix in {".webm", ".mp4", ".mov", ".m4v"} else ("image" if selected else "none")),
         "speech_rain_ready": bool(selected and suffix in {".html", ".htm"}),
         "control_contract": {
-            "type": "continuum:speech-rain",
+            "types": ["continuum:speech-rain", "continuum:wallpaper-control"],
             "transport": "postMessage to embedded wallpaper iframe",
-            "inputs": ["assistant_text", "council_text", "daemon_directive"],
-            "outputs": ["glyph_rain", "pattern", "direction", "color", "speed", "intensity"],
+            "inputs": ["assistant_text", "council_text", "daemon_directive", "continuum_wallpaper_text", "continuum_wallpaper_control", "continuum_wallpaper_preset"],
+            "outputs": ["glyph_rain", "pattern", "direction", "color", "speed", "intensity", "font_size", "audio_reactivity", "settings_modal"],
+            "settings_json_keys": [
+                "fontSize", "characterSize", "pattern", "direction", "primaryColor", "secondaryColor",
+                "speed", "intensity", "density", "characterSet", "customCharacters", "colorPreset",
+                "hueReactivity", "saturationGain", "brightnessDepth", "audioReactive", "audioReverse",
+                "audioDiagonals", "autoOrchestrator", "reverseFlow", "settingsPanel", "canvasOpacity",
+            ],
+            "commands": [
+                "chaos_once", "toggle_audio", "audio_on", "audio_off", "auto_on", "auto_off",
+                "reverse_flow", "settings_open", "settings_minimize", "settings_close",
+            ],
             "mutates_external_state": False,
         },
     }
@@ -4240,19 +4253,26 @@ def _latest_wallpaper_event(last_event_id: str = "") -> tuple[str, str]:
             continue
         if not isinstance(event, dict):
             continue
-        if event.get("kind") != "continuum.wallpaper.text":
+        if event.get("kind") not in {"continuum.wallpaper.text", "continuum.wallpaper.control"}:
             continue
         event_id = str(event.get("event_id") or "")
         if event_id and event_id == last_seen:
             return "", last_seen
         payload = event.get("payload") if isinstance(event.get("payload"), dict) else {}
         text = str(payload.get("text") or "").strip()
-        if not text:
+        settings = payload.get("settings") if isinstance(payload.get("settings"), dict) else {}
+        command_text = str(payload.get("command") or "").strip()
+        settings_json = str(payload.get("settings_json") or "").strip()
+        if not text and not settings and not command_text and not settings_json:
             continue
         command = {
             "text": text[:2400],
             "mode": str(payload.get("mode") or "rain"),
             "source": str(payload.get("source") or event.get("source") or "wallpaper-event"),
+            "settings": settings,
+            "settings_json": settings_json,
+            "command": command_text,
+            "slot": str(payload.get("slot") or event.get("slot") or "wallpaper"),
             "event_id": event_id,
         }
         return json.dumps(command, ensure_ascii=False), event_id or last_seen
@@ -4812,12 +4832,35 @@ CONTINUUM_WALLPAPER_HEAD = """
     return true;
   };
 
+  window.continuumWallpaperControl = function(payload = {}) {
+    const data = typeof payload === "string" ? { text: payload } : { ...(payload || {}) };
+    const frame = wallpaperFrame();
+    if (!frame || !frame.contentWindow) return false;
+    frame.contentWindow.postMessage({
+      type: "continuum:wallpaper-control",
+      source: data.source || "wallpaper-control",
+      text: textOf(data.text || "").slice(0, 2400),
+      mode: data.mode || "",
+      command: data.command || "",
+      settings: data.settings || {},
+      settings_json: data.settings_json || "",
+      slot: data.slot || "wallpaper",
+      ts: Date.now()
+    }, "*");
+    document.documentElement.dataset.continuumWallpaperControl = "sent";
+    return true;
+  };
+
   window.continuumWallpaperCommand = function(payload = {}) {
     const data = typeof payload === "string" ? { text: payload } : { ...(payload || {}) };
     if (data.mode === "blob") setWallpaperBlobMode(true, false);
     if (data.mode === "collapsed") setWallpaperBlobMode(true, true);
     if (data.mode === "background") setWallpaperBlobMode(false, false);
-    if (data.text) return window.continuumSpeechRain(data.text, data.source || "wallpaper-command");
+    if (data.command || data.settings || data.settings_json) return window.continuumWallpaperControl(data);
+    if (data.text) {
+      window.continuumSpeechRain(data.text, data.source || "wallpaper-command");
+      return window.continuumWallpaperControl(data);
+    }
     return true;
   };
 
@@ -5799,7 +5842,7 @@ with gr.Blocks(title=TITLE) as demo:
                     native_initial_status, native_initial_rows = native_toolkit_surface()
                     native_refresh = gr.Button("Refresh Native Tools", size="sm")
                     native_status = gr.Markdown(native_initial_status)
-                    gr.Markdown("**Wallpaper text controls**")
+                    gr.Markdown("**Wallpaper controls**")
                     with gr.Row(elem_id="wallpaper-control-row"):
                         wallpaper_text = gr.Textbox(
                             label="Speech-rain text",
@@ -5808,7 +5851,21 @@ with gr.Blocks(title=TITLE) as demo:
                             scale=4,
                         )
                         wallpaper_send = gr.Button("Send Wallpaper Text", scale=1, variant="secondary")
-                    wallpaper_status = gr.Markdown("Use this for direct operator text. Tool-less agents can use `[[tool: native.continuum_wallpaper_text | text=...]]`; indexed MCP tools are optional.")
+                    with gr.Row(elem_id="wallpaper-settings-row"):
+                        wallpaper_settings = gr.Textbox(
+                            label="Settings JSON",
+                            placeholder='{"fontSize":24,"colorPreset":"aurora","direction":"toward","density":80,"settingsPanel":"minimize"}',
+                            lines=2,
+                            scale=4,
+                        )
+                        wallpaper_command = gr.Textbox(
+                            label="Command",
+                            placeholder="settings_minimize, settings_open, audio_on, audio_off, chaos_once...",
+                            lines=2,
+                            scale=2,
+                        )
+                        wallpaper_control_send = gr.Button("Send Wallpaper Control", scale=1, variant="primary")
+                    wallpaper_status = gr.Markdown("Use this for direct operator text/settings. Tool-less agents can use `[[tool: native.continuum_wallpaper_text | text=...]]`, `[[tool: native.continuum_wallpaper_control | settings_json={...}]]`, or `[[tool: native.continuum_wallpaper_preset | preset=audio]]`; indexed MCP tools are optional.")
                     native_table = gr.Dataframe(
                         headers=["Category", "Tool", "Args", "Description", "Relay Command"],
                         datatype=["str", "str", "str", "str", "str"],
@@ -5889,6 +5946,37 @@ with gr.Blocks(title=TITLE) as demo:
           return ok ? "Sent to expressive wallpaper." : "Wallpaper bridge unavailable on this render.";
         }""",
     )
+    wallpaper_control_send.click(
+        None,
+        [wallpaper_text, wallpaper_settings, wallpaper_command],
+        [wallpaper_status],
+        js="""(text, settingsText, command) => {
+          const clean = String(text || "").trim();
+          const rawSettings = String(settingsText || "").trim();
+          const cleanCommand = String(command || "").trim();
+          let settings = {};
+          if (rawSettings) {
+            try {
+              settings = JSON.parse(rawSettings);
+            } catch (err) {
+              return "Settings JSON is not valid: " + err.message;
+            }
+            if (!settings || typeof settings !== "object" || Array.isArray(settings)) {
+              return "Settings JSON must be an object.";
+            }
+          }
+          if (!clean && !cleanCommand && !Object.keys(settings).length) return "Enter text, settings JSON, or a command first.";
+          const ok = window.continuumWallpaperCommand?.({
+            text: clean,
+            settings,
+            settings_json: rawSettings,
+            command: cleanCommand,
+            source: "operator-control",
+            slot: "wallpaper"
+          });
+          return ok ? "Sent wallpaper control." : "Wallpaper bridge unavailable on this render.";
+        }""",
+    )
     wallpaper_timer.tick(_latest_wallpaper_event, [wallpaper_seen], [wallpaper_event_payload, wallpaper_seen])
     wallpaper_event_payload.change(
         None,
@@ -5898,7 +5986,7 @@ with gr.Blocks(title=TITLE) as demo:
           if (!payload) return;
           try {
             const data = JSON.parse(payload);
-            if (data && data.text) window.continuumWallpaperCommand?.(data);
+            if (data) window.continuumWallpaperCommand?.(data);
           } catch {}
         }""",
     )

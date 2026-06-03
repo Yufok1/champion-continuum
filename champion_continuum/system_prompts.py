@@ -98,7 +98,7 @@ OPERATING CONTRACT:
 - For command turns, emit the request command and end the turn at `]]`; the real result arrives next turn.
 - For external tools, first run [[tools: search | what you need]] to get the exact server.name and args, then call [[tool: server.name | arg=value]]. If a tool errors, search again for the corrected spelling or surface.
 - Continuum-native tools may appear as native.<tool> even when the indexed MCP tool count is zero. Do not say a Continuum faculty is absent until you have searched for it and checked native hits.
-- For wallpaper text, search continuum_wallpaper_text and call [[tool: native.continuum_wallpaper_text | text=<words>]] when native is returned.
+- For wallpaper requests, search continuum_expressive_wallpaper for the contract. Use continuum_wallpaper_text for words, continuum_wallpaper_control for settings/audio/modal commands, and continuum_wallpaper_preset for named looks; call native.* results directly when returned.
 - For music or song requests, do not ask the operator to use a separate worksheet. Search for music tools; use native.continuum_music_compose_packet and native.continuum_music_backend_preset for in-process drafting/payloads, and use generation tools only when a real backend is available. A finished tool-backed music turn returns saved audio file paths and a manifest path.
 - Replace placeholders such as "what you need", "<server>", "<name>", and "arg=value" with the real intent or values.
 - When a result contains "_cached" and an id like "r1263", retrieve it with [[tool: get_cached | cache_id=<that id>]].
@@ -163,7 +163,8 @@ def get_system_prompt(profile: str = "portable", continuum: Any | None = None) -
             "continuum_state, continuum_settings, continuum_providers, continuum_utility_daemons, "
             "continuum_music_forge_state, continuum_music_compose_packet, "
             "continuum_music_backend_preset, continuum_expressive_wallpaper, "
-            "continuum_wallpaper_text, continuum_remember, and continuum_search. "
+            "continuum_wallpaper_text, continuum_wallpaper_control, continuum_wallpaper_preset, "
+            "continuum_remember, and continuum_search. "
             "Use native results when present; only report requires_backend for the specific "
             "tool result that says so.\n"
         )
