@@ -105,6 +105,18 @@ The main chat is the only human conversation input. Translation, cultural tact,
 reply drafting, voice-message wording, and relationship tone are handled by the
 agent/council behind the scenes instead of a separate worksheet tab.
 
+The **Intent Mode** selector beside the composer lets the operator override the
+next turn's routing without leaving chat. `Auto` infers the route from the
+message. `Translation Bridge`, `Music Forge`, `Resource Audit`, and
+`Expressive Wallpaper` make the selected faculty explicit to the council. Tool
+backed modes still require indexed MCP tools; the selector sharpens routing, it
+does not pretend a missing sidecar or missing music backend is live.
+
+The support rail has two tool views. **Tool Surface** shows whatever MCP/SSE
+services are currently indexed. **Native Tools** is the Continuum-native catalog:
+music, translation, daemons, peer links, wallpaper, memory, and intent tools with
+ready relay commands when the local MCP surface is indexed.
+
 The main page exposes five **Continuum MCP/SSE service** boxes. Paste local or
 remote Continuum MCP URLs there, for example `http://127.0.0.1:7872/mcp/sse`,
 then click **Save & Connect Services**. The deck writes those services into the
@@ -219,10 +231,15 @@ file path or URL before launch. Supported defaults include `.html`, `.webm`,
 
 When the active wallpaper is an HTML/web wallpaper, the deck treats it as an
 expressive renderer facility. Assistant and council replies are sent to the
-wallpaper as `continuum:speech-rain` messages, so the actual words can roll
-through the background while color, speed, direction, pattern, density, and
-intensity shift from the text itself. Agents can inspect this contract through
-the MCP tool `continuum_expressive_wallpaper`.
+embedded wallpaper as `continuum:speech-rain` messages, so the actual words can
+roll through the background while color, speed, direction, pattern, density,
+and intensity shift from the text itself. Agents can inspect this contract
+through the MCP tool `continuum_expressive_wallpaper`.
+
+The wallpaper is part of the main page. It does not require a separate side
+window. Click **Wallpaper Blob** to turn the Matrix Rain background into a
+draggable, resizable, collapsible underlay viewport; click the blob `x` to
+return it to the full-page underlay.
 
 Facilities can be daemon-shaped without becoming uncontrolled background
 processes. Use capability-card style wrappers such as `Wallpaper-Reactor`,

@@ -21,11 +21,13 @@ import html
 import json
 import os
 import re
+import socket
 import tempfile
 import time
 from hashlib import sha256
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote, urlparse
 
 import gradio as gr
 import pandas as pd
@@ -92,6 +94,15 @@ MODELS: list[tuple[str, str]] = [
     ("Llama 3.1 8B Instruct - gated", "meta-llama/Llama-3.1-8B-Instruct"),
 ]
 DEFAULT_MODEL = "Qwen/Qwen2.5-7B-Instruct"
+INTENT_MODE_CHOICES = [
+    "Auto",
+    "Plain Conversation",
+    "Translation Bridge",
+    "Music Forge",
+    "Resource Audit",
+    "Expressive Wallpaper",
+]
+TOOL_REQUIRED_INTENT_MODES = {"Music Forge", "Resource Audit", "Expressive Wallpaper"}
 
 # CLI-brain mode (local): no HuggingFace model ever loads. The brain is the agent
 # in the operator's CLI (Claude / Codex / Gemini), relayed turn-by-turn through a
@@ -207,8 +218,8 @@ def _prep_messages(messages: list[dict]) -> list[dict]:
 
 
 BRAIN_DIR = Path(__file__).parent / "cli_brain_channel"
-if CLI_BRAIN:
-    BRAIN_DIR.mkdir(exist_ok=True)
+BRAIN_DIR.mkdir(exist_ok=True)
+os.environ.setdefault("GRADIO_TEMP_DIR", str(BRAIN_DIR / "gradio_tmp"))
 # Forum roster: one presence file per mind, each agent beats its own heartbeat.
 CONNECTED_DIR = BRAIN_DIR / "connected"
 if CLI_BRAIN:
@@ -984,6 +995,9 @@ def _wants_tool_lane(message: str, state: dict, decision: dict) -> bool:
     if state.pop("force_relay_once", False):
         state["explore_mode"] = True
         return True
+    intent_mode = str(state.get("intent_mode") or "Auto")
+    if intent_mode in TOOL_REQUIRED_INTENT_MODES:
+        return True
     if decision.get("mode") == "BUILD" and decision.get("should_execute"):
         return True
     has_tool_surface = bool(state.get("mcp_connected") or state.get("mcp_url"))
@@ -992,6 +1006,50 @@ def _wants_tool_lane(message: str, state: dict, decision: dict) -> bool:
     if has_tool_surface and _TOOL_INTENT_RE.search(message or ""):
         return True
     return False
+
+
+def _intent_mode_context(intent_mode: str, state: dict | None = None) -> str:
+    mode = (intent_mode or "Auto").strip() or "Auto"
+    if mode not in INTENT_MODE_CHOICES:
+        mode = "Auto"
+    tool_summary = {}
+    try:
+        tool_summary = state["store"].indexed_tool_summary() if state and state.get("store") else {}
+    except Exception:
+        tool_summary = {}
+    tool_count = int(tool_summary.get("count") or 0)
+    lines = [
+        "OPERATOR INTENT MODE OVERRIDE:",
+        f"- Selected mode: {mode}",
+        "- This is the operator's current routing preference for the normal chat, not a separate worksheet.",
+    ]
+    if mode == "Auto":
+        lines.append("- Infer the goal from the message. Use tools only when the request needs live facilities or evidence.")
+    elif mode == "Plain Conversation":
+        lines.append("- Stay conversational. Do not use tools unless the operator explicitly asks for a facility, file, or live evidence.")
+    elif mode == "Translation Bridge":
+        lines.extend([
+            "- Prioritize a sendable cross-language/cross-cultural reply in the main answer.",
+            "- Preserve warmth, humor, and human intent. Include literal back-translation only when it improves trust.",
+        ])
+    elif mode == "Music Forge":
+        lines.extend([
+            "- Treat the message as a request to plan or produce original music/audio through Music Forge.",
+            "- First use indexed Music Forge tools when available: continuum_music_forge_state, continuum_music_compose_packet, continuum_music_hf_space_schema, and continuum_music_generate_preset.",
+            "- A finished tool-backed music turn returns saved audio file paths and a manifest path. If no music tools are indexed, say exactly that and give the smallest recovery step.",
+        ])
+    elif mode == "Resource Audit":
+        lines.extend([
+            "- Enumerate the live resource/tool surface from evidence. Do not invent facilities.",
+            "- If no tools are indexed, report zero tools and the active/saved service URL state instead of suggesting fake endpoints.",
+        ])
+    elif mode == "Expressive Wallpaper":
+        lines.extend([
+            "- Treat the answer as a visual/expressive surface request.",
+            "- Use the expressive wallpaper tool when indexed; otherwise explain whether the frontend wallpaper bridge is active and what is missing.",
+        ])
+    lines.append(f"- Indexed MCP tool count visible to this session: {tool_count}.")
+    return "\n".join(lines)
 
 
 _IDENTITY_SUFFIX = (
@@ -1153,17 +1211,39 @@ def _peer_link_values() -> list[str]:
     return values
 
 
+def _active_tool_cache_state() -> dict[str, Any]:
+    cache_path = SHARED_STORE_ROOT / "mcp_tools_active.json"
+    try:
+        payload = json.loads(cache_path.read_text(encoding="utf-8"))
+    except Exception:
+        return {"count": 0, "url": "", "servers": [], "cache_path": str(cache_path), "exists": False}
+    tools = payload.get("tools") if isinstance(payload, dict) else []
+    if not isinstance(tools, list):
+        tools = []
+    return {
+        "count": len(tools),
+        "url": str(payload.get("url") or ""),
+        "servers": sorted({str(item.get("server") or "") for item in tools if isinstance(item, dict) and item.get("server")}),
+        "cache_path": str(cache_path),
+        "exists": True,
+        "ts": payload.get("ts"),
+    }
+
+
 def _peer_link_state_for_ui() -> dict[str, Any]:
     links = _load_peer_links_for_ui()
+    active_tools = _active_tool_cache_state()
     return {
         "schema": "champion-continuum/peer-links/v1",
         "mode": "mcp_service_registry",
         "max_links": MAX_PEER_LINKS_UI,
         "count": len(links),
         "links": links,
+        "indexed_tool_count": active_tools["count"],
+        "indexed_tool_url": active_tools["url"],
         "external_connection_opened": bool(links),
         "auto_send_enabled": False,
-        "note": "Five Continuum MCP/SSE service targets. Saved locally and indexed into the text-relay tool surface.",
+        "note": "Five Continuum MCP/SSE service targets. Saved links become tool surfaces only after indexing succeeds.",
     }
 
 
@@ -1171,9 +1251,15 @@ def _peer_link_status_text() -> str:
     state = _peer_link_state_for_ui()
     if not state["count"]:
         return "No Continuum MCP/SSE services saved yet. Paste up to five service URLs, then Save & Connect."
+    if int(state.get("indexed_tool_count") or 0) <= 0:
+        return (
+            f"Saved {state['count']} / {state['max_links']} Continuum MCP/SSE service links. "
+            "No tools are indexed yet; start the target MCP service, confirm the URL, then click Save & Connect Services."
+        )
     return (
         f"Saved {state['count']} / {state['max_links']} Continuum MCP/SSE service links. "
-        "Their tools are available to tool-less agents through [[tools: ...]] and [[tool: ...]]."
+        f"Indexed {state['indexed_tool_count']} tools from `{state.get('indexed_tool_url') or 'active cache'}`. "
+        "Tool-less agents can use them through [[tools: ...]] and [[tool: ...]]."
     )
 
 
@@ -1483,6 +1569,66 @@ def load_trace_table(state):
     return rows, note
 
 
+def latest_music_track() -> tuple[str, str | None, dict]:
+    """Return the newest Music Forge artifact as a compact UI readout."""
+    output_root = Path(os.environ.get("CONTINUUM_MUSIC_OUTPUTS", BRAIN_DIR / "music_outputs"))
+    try:
+        manifests = sorted(output_root.rglob("manifest.json"), key=lambda p: p.stat().st_mtime, reverse=True)
+    except OSError:
+        manifests = []
+    if not manifests:
+        return "No Music Forge tracks found yet.", None, {"status": "empty", "output_root": str(output_root)}
+
+    manifest_path = manifests[0]
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        return f"Latest manifest could not be read: {type(exc).__name__}: {exc}", None, {
+            "status": "error",
+            "manifest_path": str(manifest_path),
+        }
+
+    saved_files = list(manifest.get("saved_files") or [])
+    audio_path = ""
+    audio_sha = ""
+    audio_bytes = 0
+    if saved_files:
+        audio_path = str(saved_files[0].get("path") or "")
+        audio_sha = str(saved_files[0].get("sha256") or "")
+        try:
+            audio_bytes = Path(audio_path).stat().st_size
+            if not audio_sha:
+                audio_sha = sha256(Path(audio_path).read_bytes()).hexdigest()
+        except OSError:
+            audio_bytes = int(saved_files[0].get("bytes") or 0)
+
+    summary = "\n".join(
+        [
+            f"**Title:** {manifest.get('title') or '(untitled)'}",
+            f"**Receipt:** `{manifest.get('receipt_id') or 'legacy manifest'}`",
+            f"**Backend:** `{manifest.get('space_id') or '(unknown)'}` `{manifest.get('api_name') or ''}`",
+            f"**Audio:** `{audio_path or 'none'}`",
+            f"**Bytes:** `{audio_bytes}`",
+            f"**SHA256:** `{audio_sha or 'unavailable'}`",
+            f"**Manifest:** `{manifest_path}`",
+        ]
+    )
+    info = {
+        "status": "ok",
+        "receipt_id": manifest.get("receipt_id") or "",
+        "action_class": manifest.get("action_class") or "legacy",
+        "approval_state": manifest.get("approval_state") or "",
+        "title": manifest.get("title"),
+        "space_id": manifest.get("space_id"),
+        "api_name": manifest.get("api_name"),
+        "audio_path": audio_path,
+        "audio_bytes": audio_bytes,
+        "audio_sha256": audio_sha,
+        "manifest_path": str(manifest_path),
+    }
+    return summary, audio_path if audio_path and Path(audio_path).exists() else None, info
+
+
 def inspect_node(state, evt: gr.SelectData):
     """Open one memory node's full informational wealth (the complete receipt)."""
     if not state or "trace" not in state:
@@ -1499,6 +1645,7 @@ def chat(
     message: str,
     history: list,
     model_id: str,
+    intent_mode: str,
     mcp_url: str,
     state,
     oauth_token: gr.OAuthToken | None = None,
@@ -1507,6 +1654,9 @@ def chat(
     hf_oauth_token = _oauth_token_value(oauth_token)
     history_messages = _history_messages(history)
     message = (message or "").strip()
+    if intent_mode not in INTENT_MODE_CHOICES:
+        intent_mode = "Auto"
+    state["intent_mode"] = intent_mode
     if not message:
         t1, t2 = render_trace_plots(state["trace"])
         return history_messages, state, "", t1, t2, gr.update()
@@ -1518,6 +1668,7 @@ def chat(
             "token_est": _estimate_tokens(message),
             "cache_ids": _cache_ids(message),
             "contains_relay": "[[" in message,
+            "intent_mode": intent_mode,
         },
     )
 
@@ -1571,6 +1722,7 @@ def chat(
         try:
             route_role, active_model = _route_model(model_id, 1 if model_id in ROUTER_PLANS else 0)
             plain_msgs = [{"role": "system", "content": _plain_system_prompt(decision)}]
+            plain_msgs.append({"role": "system", "content": _intent_mode_context(intent_mode, state)})
             if CLI_BRAIN:
                 _dg = _continuum_digest(state, message)
                 if _dg:
@@ -1587,6 +1739,7 @@ def chat(
                     "char_count": prompt_chars,
                     "token_est": _estimate_tokens("x" * prompt_chars),
                     "gate_mode": decision.get("mode"),
+                    "intent_mode": intent_mode,
                 },
             )
             t0 = time.time()
@@ -1625,6 +1778,7 @@ def chat(
         return history, state, "", t1, t2, stage_update
 
     current_msgs = [{"role": "system", "content": relay_system}]
+    current_msgs.append({"role": "system", "content": _intent_mode_context(intent_mode, state)})
     if CLI_BRAIN:
         _dg = _continuum_digest(state, message)
         if _dg:
@@ -1655,7 +1809,8 @@ def chat(
             current_msgs.append({"role": "assistant", "content": reply})
             prose = _agent_prose(reply)
             unsafe = _unsafe_tool_calls(reply)
-            if unsafe and not _operator_authorized_action(message):
+            action_authorized = _operator_authorized_action(message) or intent_mode == "Music Forge"
+            if unsafe and not action_authorized:
                 state["trace"].observe(
                     "hold",
                     f"read-only gate redirected {len(unsafe)} action tool(s)",
@@ -2228,11 +2383,39 @@ def reset():
     return [], s, "", t1, t2, ""
 
 
+def _tcp_service_state(url: str, fallback_port: int | None = None) -> dict[str, Any]:
+    parsed = urlparse(url or "")
+    host = parsed.hostname or "127.0.0.1"
+    port = parsed.port or fallback_port
+    if not port:
+        return {"running": False, "host": host, "port": None, "detail": "no port configured"}
+    try:
+        with socket.create_connection((host, int(port)), timeout=0.25):
+            return {"running": True, "host": host, "port": int(port), "detail": "tcp port accepts connections"}
+    except OSError as exc:
+        return {
+            "running": False,
+            "host": host,
+            "port": int(port),
+            "detail": f"{type(exc).__name__}: {exc}",
+        }
+
+
+def _safe_int(value: str, fallback: int) -> int:
+    try:
+        return int(str(value).strip())
+    except (TypeError, ValueError):
+        return fallback
+
+
 def runtime_settings_state():
     link_port = os.environ.get("CONTINUUM_LINK_PORT", "7871")
     link_url = os.environ.get("CONTINUUM_LINK_URL", f"http://127.0.0.1:{link_port}")
     mcp_port = os.environ.get("CONTINUUM_MCP_PORT", "7872")
     mcp_url = os.environ.get("CONTINUUM_MCP_URL", f"http://127.0.0.1:{mcp_port}")
+    link_probe = _tcp_service_state(link_url, _safe_int(link_port, 7871))
+    mcp_probe = _tcp_service_state(mcp_url, _safe_int(mcp_port, 7872))
+    active_tools = _active_tool_cache_state()
     token_file = Path(
         os.environ.get("CONTINUUM_LINK_TOKEN_FILE")
         or (Path(__file__).parent / "cli_brain_channel" / "continuum_link_token.txt")
@@ -2264,6 +2447,8 @@ def runtime_settings_state():
         },
         "link_service": {
             "url": link_url,
+            "running": link_probe["running"],
+            "probe": link_probe,
             "token_file": str(token_file),
             "token_file_exists": token_file.exists(),
             "settings_endpoint": f"{link_url}/settings",
@@ -2272,13 +2457,22 @@ def runtime_settings_state():
         },
         "mcp_service": {
             "url": mcp_url,
+            "running": mcp_probe["running"],
+            "probe": mcp_probe,
             "sse": f"{mcp_url}/mcp/sse",
             "streamable_http": f"{mcp_url}/mcp",
             "purpose": "Expose Continuum tools to tool-less agents through MCP.",
+            "indexed_tool_count": active_tools["count"],
+            "indexed_tool_url": active_tools["url"],
         },
         "peer_links": _peer_link_state_for_ui(),
         "providers": provider_registry_state(),
-        "music_forge": music_forge_state(),
+        "music_forge": music_forge_state()
+        | {
+            "mcp_sidecar_running": mcp_probe["running"],
+            "mcp_tools_indexed": active_tools["count"],
+            "chat_auto_route_ready": bool(mcp_probe["running"] and active_tools["count"]),
+        },
         "expressive_wallpaper": _wallpaper_runtime_state(),
         "utility_daemons": load_daemon_registry(BRAIN_DIR),
         "faculties": translation_faculty_state(),
@@ -2323,6 +2517,18 @@ def runtime_settings_markdown() -> str:
         if not item.get("stale")
     ) or "none"
     daemon_counts = daemon_registry.get("counts") or {}
+    link_running = "running" if link_service.get("running") else "not running in this process"
+    mcp_running = "running" if mcp_service.get("running") else "not running in this process"
+    hosted_sidecar_note = (
+        "- Hosted Space note: `start_deck.bat` sidecars are local desktop processes; the Space runs `app.py` unless we add in-process services."
+        if space.get("is_space") and not CLI_BRAIN
+        else "- Local launcher note: `start_deck.bat` should start the Link service, MCP service, and deck together."
+    )
+    music_route_line = (
+        "ready"
+        if music.get("chat_auto_route_ready")
+        else "not ready until MCP sidecar is running and tools are indexed"
+    )
     return "\n".join(
         [
             "### Continuum Settings",
@@ -2342,15 +2548,19 @@ def runtime_settings_markdown() -> str:
             "- Edit the five MCP/SSE boxes above, then click **Save & Connect Services**.",
             "",
             "**Local endpoints**",
-            f"- Link service: `{link_service.get('url')}`",
+            f"- Link service: `{link_service.get('url')}` — {link_running}",
             f"- Link stream: `{link_service.get('sse_all')}`",
-            f"- MCP/SSE: `{mcp_service.get('sse')}`",
+            f"- MCP/SSE: `{mcp_service.get('sse')}` — {mcp_running}",
             f"- MCP HTTP: `{mcp_service.get('streamable_http')}`",
+            f"- Indexed MCP tools: `{mcp_service.get('indexed_tool_count', 0)}`",
+            hosted_sidecar_note,
             "",
             "**Music Forge**",
             f"- Output folder: `{music.get('output_dir')}`",
-            f"- HF Space client: `{'ready' if music.get('gradio_client_available') else 'not available'}`",
-            "- Use normal chat; the council calls Music Forge tools when a song request needs real audio.",
+            f"- Gradio client module: `{'installed' if music.get('gradio_client_available') else 'not installed'}`",
+            f"- MCP tool lane: `{'running' if music.get('mcp_sidecar_running') else 'not running'}`",
+            f"- Chat-to-audio auto-route: `{music_route_line}`",
+            "- Installed tools can generate real audio files only after a working music Space/API is called and audio files are saved.",
             "",
             "**Expressive wallpaper**",
             f"- Active: `{'yes' if wallpaper.get('active') else 'no'}`",
@@ -2401,6 +2611,76 @@ def _tool_rows(hits: list[dict]) -> list[list[str]]:
     return rows
 
 
+NATIVE_TOOLKIT_SPECS = [
+    ("Status", "continuum_settings", [], "Read settings, facilities, providers, privacy posture, and peer/service links."),
+    ("Status", "continuum_health", [], "Read local Continuum MCP service health."),
+    ("Status", "continuum_providers", [], "Read model/provider routing posture."),
+    ("Status", "continuum_faculties", [], "Read translation and cultural bridge faculty readiness."),
+    ("Daemons", "continuum_utility_daemons", [], "Read live utility daemon capability cards and safety posture."),
+    ("Daemons", "continuum_match_daemons", ["capability", "output", "include_stale"], "Find live utility daemons by capability or output type."),
+    ("Music", "continuum_music_forge_state", [], "Read Music Forge readiness, output folder, and public music backends."),
+    ("Music", "continuum_music_compose_packet", ["idea", "style", "lyrics", "language", "duration", "avoid"], "Build a song prompt and lyrics packet."),
+    ("Music", "continuum_music_backend_preset", ["backend", "prompt", "lyrics", "duration", "seed"], "Build a ready-to-call public music backend payload."),
+    ("Music", "continuum_music_hf_space_schema", ["space_id"], "Inspect a Hugging Face music Space API before generation."),
+    ("Music", "continuum_music_generate_preset", ["backend", "prompt", "lyrics", "duration", "seed", "title"], "Generate music through a known public HF Space preset and save audio locally."),
+    ("Music", "continuum_music_generate_hf_space", ["space_id", "prompt", "payload_json", "api_name", "title"], "Call a Hugging Face music Space and save returned audio locally."),
+    ("Bridge", "continuum_translate_packet", ["raw_message", "target_language", "source_language", "relationship_tone"], "Build a local translation and cultural bridge packet without sending externally."),
+    ("Links", "continuum_links", [], "Read registered peer/service link registry."),
+    ("Links", "continuum_slots", [], "List event slots and current slot counts."),
+    ("Links", "continuum_events", ["slot", "limit"], "Read recent Continuum events from a slot or all slots."),
+    ("Links", "continuum_create_room", ["room_label", "speaker_label", "listener_label", "source_lang", "target_lang", "relationship_tone"], "Create a local room session and return join paths."),
+    ("Wallpaper", "continuum_expressive_wallpaper", [], "Read expressive wallpaper readiness and speech-rain control contract."),
+    ("Memory", "continuum_remember", ["text", "tags", "kind"], "Store a durable Continuum memory record."),
+    ("Memory", "continuum_search", ["query", "limit"], "Search durable Continuum memory records."),
+    ("Memory", "continuum_process_agent_text", ["text", "max_tool_calls"], "Execute relay commands emitted by a tool-less agent."),
+    ("Intent", "continuum_whatsapp_send_intent", ["to", "text", "payload_json"], "Draft a WhatsApp send intent; does not send a message."),
+    ("Intent", "continuum_wallet_intent", ["amount_sats", "memo", "asset", "payload_json"], "Draft a wallet/payment intent; does not move funds."),
+]
+
+
+def native_toolkit_surface() -> tuple[str, list[list[str]]]:
+    active_by_name: dict[str, dict[str, Any]] = {}
+    try:
+        payload = json.loads((SHARED_STORE_ROOT / "mcp_tools_active.json").read_text(encoding="utf-8"))
+        for item in payload.get("tools") or []:
+            name = str(item.get("name") or "")
+            if name:
+                active_by_name[name.lower()] = item
+    except Exception:
+        active_by_name = {}
+
+    rows: list[list[str]] = []
+    indexed = 0
+    for category, name, fallback_args, desc in NATIVE_TOOLKIT_SPECS:
+        hit = active_by_name.get(name.lower())
+        args = list(fallback_args)
+        if hit:
+            indexed += 1
+            schema = hit.get("input_schema") or {}
+            props = list((schema.get("properties") or {}).keys())
+            if props:
+                args = props
+            tool_name = f"{hit.get('server')}.{name}"
+            relay = f"[[tool: {tool_name} | " + ", ".join(f"{arg}=" for arg in args) + "]]"
+            if not args:
+                relay = f"[[tool: {tool_name} | ]]"
+        else:
+            tool_name = f"{name} (summon)"
+            relay = f"[[tools: search | {name}]]"
+        rows.append([
+            category,
+            tool_name,
+            ", ".join(args) if args else "(none)",
+            desc,
+            relay,
+        ])
+    status = (
+        f"Continuum Native Toolkits: {len(rows)} cataloged; {indexed} indexed in the active MCP surface. "
+        "Rows with exact server names can be pasted directly; summon rows search the live tool surface first."
+    )
+    return status, rows
+
+
 def _all_tool_hits(store) -> list[dict]:
     # The active cache holds exactly the currently-connected server's full tool set.
     return store.active_tools()
@@ -2434,18 +2714,24 @@ def _exploration_candidates(hits: list[dict], limit: int = 18) -> list[str]:
 _READ_ONLY_HINTS = (
     "get_", "list_", "show_", "read_", "search_", "info", "status", "help", "test",
     "catalog", "tree", "about", "capabilities", "onboarding", "health",
+    "state", "settings", "schema", "preset", "packet", "providers", "faculties",
+    "slots", "links", "events",
 )
 _MUTATING_HINTS = (
     "start", "spawn", "create", "write", "edit", "delete", "remove", "restore",
     "import", "export", "register", "download", "upload", "plug", "unplug",
     "mutate", "persist", "bind", "activate", "run", "launch", "send", "toggle",
+    "post", "remember", "process", "heartbeat", "generate", "wallet", "whatsapp",
 )
 
 
 def _is_read_only_tool_name(name: str) -> bool:
     clean = (name or "").split(".", 1)[-1].lower()
-    if clean.startswith(_MUTATING_HINTS):
+    tokens = [part for part in re.split(r"[^a-z0-9]+", clean) if part]
+    if clean.startswith(_MUTATING_HINTS) or any(token in _MUTATING_HINTS for token in tokens):
         return False
+    if clean in {"continuum_expressive_wallpaper"}:
+        return True
     return clean.startswith(_READ_ONLY_HINTS) or any(h in clean for h in _READ_ONLY_HINTS)
 
 
@@ -2656,7 +2942,17 @@ CUSTOM_CSS = """
     pointer-events: none;
     overflow: hidden;
     background: #0d0c0b;
-    --cc-wallpaper-opacity: 0.32;
+    --cc-wallpaper-opacity: 0.52;
+    --cc-wallpaper-brightness: 0.82;
+    --cc-wallpaper-saturate: 1.2;
+    --cc-wallpaper-contrast: 1.08;
+}
+
+#continuum-wallpaper[data-wallpaper-kind="web_wallpaper"] {
+    --cc-wallpaper-opacity: 0.72;
+    --cc-wallpaper-brightness: 0.92;
+    --cc-wallpaper-saturate: 1.28;
+    --cc-wallpaper-contrast: 1.1;
 }
 
 #continuum-wallpaper video,
@@ -2665,9 +2961,10 @@ CUSTOM_CSS = """
     width: 100%;
     height: 100%;
     object-fit: cover;
-    opacity: var(--cc-wallpaper-opacity, 0.32);
-    filter: saturate(1.15) contrast(1.05) brightness(0.68);
+    opacity: var(--cc-wallpaper-opacity, 0.52);
+    filter: saturate(var(--cc-wallpaper-saturate, 1.2)) contrast(var(--cc-wallpaper-contrast, 1.08)) brightness(var(--cc-wallpaper-brightness, 0.82));
     border: 0;
+    display: block;
 }
 
 #continuum-wallpaper::after {
@@ -2675,9 +2972,171 @@ CUSTOM_CSS = """
     position: absolute;
     inset: 0;
     background:
-        linear-gradient(180deg, rgba(13,12,11,0.30), rgba(13,12,11,0.86)),
+        linear-gradient(180deg, rgba(13,12,11,0.16), rgba(13,12,11,0.72)),
         radial-gradient(circle at 74% 18%, rgba(217,119,6,0.10), transparent 34%),
         radial-gradient(circle at 18% 80%, rgba(34,197,94,0.08), transparent 32%);
+}
+
+#continuum-wallpaper.cc-wallpaper-blob {
+    left: var(--cc-wallpaper-blob-x, calc(100vw - 476px));
+    top: var(--cc-wallpaper-blob-y, 92px);
+    right: auto;
+    bottom: auto;
+    width: var(--cc-wallpaper-blob-w, min(440px, calc(100vw - 36px)));
+    height: var(--cc-wallpaper-blob-h, 310px);
+    z-index: 39;
+    pointer-events: none;
+    border: 1px solid rgba(250, 204, 21, 0.58);
+    border-radius: 28% 14% 22% 17% / 16% 26% 18% 30%;
+    background:
+        linear-gradient(135deg, rgba(250, 204, 21, 0.12), rgba(226, 232, 240, 0.08)),
+        rgba(12, 12, 14, 0.70);
+    box-shadow:
+        0 24px 84px rgba(0, 0, 0, 0.48),
+        0 0 34px rgba(250, 204, 21, 0.20),
+        inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+    resize: none;
+    animation: cc-blob-breathe 10s ease-in-out infinite;
+}
+
+#continuum-wallpaper.cc-wallpaper-blob iframe,
+#continuum-wallpaper.cc-wallpaper-blob video,
+#continuum-wallpaper.cc-wallpaper-blob img {
+    opacity: 0.92;
+    filter: saturate(1.28) contrast(1.12) brightness(0.94);
+    pointer-events: none;
+}
+
+#continuum-wallpaper.cc-wallpaper-blob::before {
+    content: "Behold: Matrix Rain Blob";
+    position: absolute;
+    inset: 0.58rem 4.7rem auto 0.72rem;
+    height: 2rem;
+    z-index: 4;
+    display: flex;
+    align-items: center;
+    padding: 0 0.72rem;
+    border-radius: 999px 44px 999px 44px;
+    border: 1px solid rgba(226, 232, 240, 0.36);
+    background:
+        linear-gradient(90deg, rgba(250, 204, 21, 0.24), rgba(226, 232, 240, 0.13)),
+        rgba(13, 12, 11, 0.68);
+    color: #fff7ed;
+    font-size: 0.75rem;
+    font-weight: 850;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    cursor: grab;
+    pointer-events: none;
+    box-shadow: 0 0 18px rgba(250, 204, 21, 0.18);
+}
+
+#continuum-wallpaper.cc-wallpaper-blob::after {
+    background:
+        linear-gradient(180deg, rgba(13,12,11,0.08), rgba(13,12,11,0.28)),
+        radial-gradient(circle at 74% 18%, rgba(250,204,21,0.08), transparent 34%);
+}
+
+#continuum-wallpaper.cc-wallpaper-blob.cc-wallpaper-dragging::before {
+    cursor: grabbing;
+}
+
+#continuum-wallpaper.cc-wallpaper-collapsed {
+    width: min(360px, calc(100vw - 28px));
+    height: 58px;
+    overflow: hidden;
+    border-radius: 999px 46px 999px 46px;
+}
+
+#continuum-wallpaper.cc-wallpaper-collapsed iframe,
+#continuum-wallpaper.cc-wallpaper-collapsed video,
+#continuum-wallpaper.cc-wallpaper-collapsed img {
+    opacity: 0.12;
+}
+
+.cc-wallpaper-blob-button,
+.cc-wallpaper-blob-handle,
+.cc-wallpaper-blob-grip,
+.cc-wallpaper-blob-edge {
+    display: none;
+}
+
+#continuum-wallpaper.cc-wallpaper-blob .cc-wallpaper-blob-button,
+#continuum-wallpaper.cc-wallpaper-blob .cc-wallpaper-blob-handle,
+#continuum-wallpaper.cc-wallpaper-blob .cc-wallpaper-blob-grip,
+#continuum-wallpaper.cc-wallpaper-blob .cc-wallpaper-blob-edge {
+    display: block;
+    position: absolute;
+    z-index: 6;
+    pointer-events: auto;
+}
+
+#continuum-wallpaper.cc-wallpaper-blob .cc-wallpaper-blob-handle {
+    left: 0.72rem;
+    right: 4.7rem;
+    top: 0.58rem;
+    height: 2rem;
+    border: 0;
+    border-radius: 999px 44px 999px 44px;
+    background: transparent;
+    cursor: grab;
+    padding: 0;
+}
+
+#continuum-wallpaper.cc-wallpaper-blob.cc-wallpaper-dragging .cc-wallpaper-blob-handle {
+    cursor: grabbing;
+}
+
+#continuum-wallpaper.cc-wallpaper-blob .cc-wallpaper-blob-button {
+    top: 0.78rem;
+    width: 24px;
+    height: 24px;
+    border: 1px solid rgba(226, 232, 240, 0.46);
+    border-radius: 999px;
+    background: rgba(15, 15, 17, 0.74);
+    color: #fff7ed;
+    cursor: pointer;
+    font-size: 14px;
+    line-height: 20px;
+    padding: 0;
+    box-shadow: 0 0 14px rgba(250, 204, 21, 0.18);
+}
+
+#continuum-wallpaper.cc-wallpaper-blob .cc-wallpaper-blob-min {
+    right: 3.12rem;
+}
+
+#continuum-wallpaper.cc-wallpaper-blob .cc-wallpaper-blob-close {
+    right: 1.02rem;
+}
+
+#continuum-wallpaper.cc-wallpaper-blob .cc-wallpaper-blob-grip {
+    right: 0.68rem;
+    bottom: 0.6rem;
+    width: 34px;
+    height: 34px;
+    border: 1px solid rgba(226, 232, 240, 0.42);
+    border-radius: 999px 999px 12px 999px;
+    background:
+        linear-gradient(135deg, transparent 0 34%, rgba(226, 232, 240, 0.78) 35% 38%, transparent 39% 48%, rgba(250, 204, 21, 0.74) 49% 52%, transparent 53% 100%),
+        rgba(15, 15, 17, 0.55);
+    cursor: nwse-resize;
+}
+
+#continuum-wallpaper.cc-wallpaper-blob .cc-wallpaper-blob-edge[data-edge="right"] {
+    top: 48px;
+    right: 0;
+    bottom: 42px;
+    width: 22px;
+    cursor: ew-resize;
+}
+
+#continuum-wallpaper.cc-wallpaper-blob .cc-wallpaper-blob-edge[data-edge="bottom"] {
+    left: 42px;
+    right: 58px;
+    bottom: 0;
+    height: 22px;
+    cursor: ns-resize;
 }
 
 html, body, gradio-app {
@@ -2713,6 +3172,19 @@ html, body, gradio-app {
     background:
         linear-gradient(180deg, rgba(13,12,11,0.88), rgba(13,12,11,0.96)),
         var(--cc-bg);
+}
+
+html.cc-wallpaper-active body,
+html.cc-wallpaper-active gradio-app,
+html.cc-wallpaper-active .gradio-container {
+    background: transparent !important;
+}
+
+html.cc-wallpaper-active .gradio-container::before {
+    background:
+        linear-gradient(180deg, rgba(13,12,11,0.36), rgba(13,12,11,0.70)),
+        radial-gradient(circle at 72% 8%, rgba(250,204,21,0.08), transparent 28%),
+        radial-gradient(circle at 18% 78%, rgba(34,197,94,0.06), transparent 30%) !important;
 }
 
 .cc-forum-roster {
@@ -2927,6 +3399,20 @@ html, body, gradio-app {
     background: #11100f !important;
 }
 
+html.cc-wallpaper-active #continuum-chat {
+    background: rgba(17, 16, 15, 0.74) !important;
+    backdrop-filter: blur(8px) saturate(1.08);
+    -webkit-backdrop-filter: blur(8px) saturate(1.08);
+}
+
+html.cc-wallpaper-active #support-tabs,
+html.cc-wallpaper-active #peer-link-shell,
+html.cc-wallpaper-active #app-settings-panel {
+    background: rgba(17, 16, 15, 0.68) !important;
+    backdrop-filter: blur(8px) saturate(1.08);
+    -webkit-backdrop-filter: blur(8px) saturate(1.08);
+}
+
 /* make Gradio's own message wrap scroll within the box, never push it taller */
 #continuum-chat .bubble-wrap,
 #continuum-chat [class*="bubble-wrap"],
@@ -2942,6 +3428,20 @@ html, body, gradio-app {
 
 #continuum-chat .message.bot {
     background-color: var(--cc-panel-2) !important;
+}
+
+#intent-mode {
+    margin-top: 0.55rem !important;
+    margin-bottom: 0.15rem !important;
+}
+
+#intent-mode .wrap,
+#intent-mode [class*="radio"] {
+    gap: 0.35rem !important;
+}
+
+#intent-mode label {
+    border-radius: 7px !important;
 }
 
 #composer-row {
@@ -2973,6 +3473,521 @@ html, body, gradio-app {
 }
 
 #clear-btn:hover { color: var(--cc-accent); }
+
+#blob-controls-row {
+    align-items: center !important;
+    gap: 0.42rem !important;
+    margin: 0.45rem 0 0.05rem !important;
+}
+
+#blob-controls-row button {
+    min-width: 86px !important;
+    border-radius: 7px !important;
+    border-color: rgba(245, 158, 11, 0.32) !important;
+    background: linear-gradient(180deg, rgba(245, 158, 11, 0.11), rgba(148, 163, 184, 0.07)) !important;
+    color: #f8fafc !important;
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.035) !important;
+}
+
+#chat-col.cc-blob-enabled,
+#support-col.cc-blob-enabled {
+    --cc-blob-pressure: 0;
+    --cc-blob-resonance: 0.12;
+    --cc-blob-settle: 1;
+    --cc-blob-pressure-glow: 0px;
+    --cc-blob-resonance-glow: 4px;
+    --cc-blob-contact-glow: 16px;
+    --cc-blob-saturate: 1.04;
+    --cc-blob-brightness: 1;
+    --cc-blob-energy-opacity: 0.92;
+    --cc-blob-energy-blur: 7px;
+    --cc-blob-energy-saturate: 1.4;
+    --cc-blob-current-duration: 13s;
+    position: fixed !important;
+    left: var(--cc-blob-x, 28px) !important;
+    top: var(--cc-blob-y, 84px) !important;
+    width: var(--cc-blob-w, min(720px, calc(100vw - 56px))) !important;
+    height: var(--cc-blob-h, min(760px, calc(100vh - 112px))) !important;
+    min-width: 280px !important;
+    min-height: 128px !important;
+    max-width: calc(100vw - 18px) !important;
+    max-height: calc(100vh - 18px) !important;
+    z-index: var(--cc-blob-z, 40) !important;
+    resize: both !important;
+    overflow: auto !important;
+    isolation: isolate;
+    padding: 3.05rem 0.88rem 0.9rem !important;
+    border-radius: 33% 15% 25% 18% / 18% 28% 19% 31% !important;
+    border: 1px solid rgba(250, 204, 21, 0.64) !important;
+    background:
+        linear-gradient(135deg, rgba(250, 204, 21, 0.18), rgba(226, 232, 240, 0.13) 42%, rgba(13, 12, 11, 0.62)),
+        rgba(12, 12, 14, 0.58) !important;
+    backdrop-filter: blur(18px) saturate(1.22);
+    -webkit-backdrop-filter: blur(18px) saturate(1.22);
+    box-shadow:
+        0 28px 92px rgba(0, 0, 0, 0.48),
+        0 0 calc(34px + var(--cc-blob-resonance-glow)) rgba(245, 158, 11, 0.16),
+        0 0 var(--cc-blob-pressure-glow) rgba(226, 232, 240, 0.18),
+        inset 0 0 0 1px rgba(255, 255, 255, 0.08),
+        inset 0 0 54px rgba(226, 232, 240, 0.07) !important;
+    filter: saturate(var(--cc-blob-saturate)) brightness(var(--cc-blob-brightness));
+    animation: cc-blob-breathe 9s ease-in-out infinite;
+    transition:
+        border-radius 180ms ease,
+        transform 180ms ease,
+        box-shadow 180ms ease,
+        filter 180ms ease,
+        opacity 180ms ease;
+}
+
+#chat-col.cc-blob-enabled {
+    overflow: hidden !important;
+    padding-bottom: 6.3rem !important;
+}
+
+.cc-blob-energy,
+.cc-blob-resize-grip,
+.cc-blob-resize-edge,
+.cc-blob-close {
+    display: none;
+}
+
+#chat-col.cc-blob-enabled > :not(.cc-blob-energy),
+#support-col.cc-blob-enabled > :not(.cc-blob-energy) {
+    position: relative;
+    z-index: 2;
+}
+
+#chat-col.cc-blob-enabled .cc-blob-energy,
+#support-col.cc-blob-enabled .cc-blob-energy {
+    display: block;
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    overflow: hidden;
+    pointer-events: none;
+    border-radius: inherit;
+    opacity: var(--cc-blob-energy-opacity);
+    mix-blend-mode: screen;
+}
+
+#chat-col.cc-blob-enabled .cc-blob-energy::before,
+#support-col.cc-blob-enabled .cc-blob-energy::before {
+    content: "";
+    position: absolute;
+    inset: -18%;
+    background:
+        repeating-conic-gradient(from 8deg, rgba(250, 204, 21, 0.00) 0 13deg, rgba(250, 204, 21, 0.13) 14deg 15deg, rgba(226, 232, 240, 0.00) 16deg 33deg),
+        radial-gradient(circle at 30% 25%, rgba(226, 232, 240, 0.20), transparent 24%),
+        radial-gradient(circle at 72% 70%, rgba(250, 204, 21, 0.17), transparent 28%);
+    filter: blur(var(--cc-blob-energy-blur)) saturate(var(--cc-blob-energy-saturate));
+    animation: cc-blob-current 13s linear infinite;
+    animation-duration: var(--cc-blob-current-duration);
+}
+
+#chat-col.cc-blob-enabled .cc-blob-bubble,
+#support-col.cc-blob-enabled .cc-blob-bubble {
+    position: absolute;
+    left: var(--x);
+    bottom: -14%;
+    width: var(--s);
+    height: var(--s);
+    border-radius: 50%;
+    border: 1px solid rgba(226, 232, 240, 0.34);
+    background:
+        radial-gradient(circle at 34% 26%, rgba(255, 255, 255, 0.88), rgba(255, 255, 255, 0.18) 14%, transparent 32%),
+        radial-gradient(circle at 62% 68%, rgba(250, 204, 21, 0.28), transparent 54%),
+        rgba(226, 232, 240, 0.055);
+    box-shadow:
+        inset 0 0 12px rgba(255, 255, 255, 0.12),
+        0 0 14px rgba(250, 204, 21, 0.18);
+    transform: translate3d(0, 0, 0) scale(0.74);
+    animation: cc-blob-bubble-rise var(--dur) ease-in-out infinite;
+    animation-delay: var(--delay);
+}
+
+#chat-col.cc-blob-enabled .cc-blob-spark,
+#support-col.cc-blob-enabled .cc-blob-spark {
+    position: absolute;
+    left: var(--x);
+    top: var(--y);
+    width: var(--w);
+    height: 1px;
+    border-radius: 999px;
+    background: linear-gradient(90deg, transparent, rgba(226, 232, 240, 0.95), rgba(250, 204, 21, 0.72), transparent);
+    box-shadow: 0 0 10px rgba(226, 232, 240, 0.42), 0 0 18px rgba(250, 204, 21, 0.28);
+    transform: rotate(var(--rot));
+    animation: cc-blob-spark-flare var(--dur) ease-in-out infinite;
+    animation-delay: var(--delay);
+}
+
+#chat-col.cc-blob-enabled .cc-blob-resize-grip,
+#support-col.cc-blob-enabled .cc-blob-resize-grip {
+    display: block;
+    position: absolute;
+    right: 0.7rem;
+    bottom: 0.62rem;
+    width: 34px;
+    height: 34px;
+    z-index: 6;
+    border: 1px solid rgba(226, 232, 240, 0.42);
+    border-radius: 999px 999px 12px 999px;
+    background:
+        linear-gradient(135deg, transparent 0 34%, rgba(226, 232, 240, 0.78) 35% 38%, transparent 39% 48%, rgba(250, 204, 21, 0.74) 49% 52%, transparent 53% 100%),
+        rgba(15, 15, 17, 0.55);
+    box-shadow: 0 0 18px rgba(250, 204, 21, 0.24), inset 0 0 12px rgba(226, 232, 240, 0.08);
+    cursor: nwse-resize;
+    pointer-events: auto;
+    padding: 0;
+}
+
+#chat-col.cc-blob-enabled .cc-blob-resize-edge,
+#support-col.cc-blob-enabled .cc-blob-resize-edge {
+    display: block;
+    position: absolute;
+    z-index: 8;
+    pointer-events: auto;
+    background: transparent;
+}
+
+#chat-col.cc-blob-enabled .cc-blob-resize-edge[data-edge="right"],
+#support-col.cc-blob-enabled .cc-blob-resize-edge[data-edge="right"] {
+    top: 48px;
+    right: 0;
+    bottom: 42px;
+    width: 24px;
+    cursor: ew-resize;
+}
+
+#chat-col.cc-blob-enabled .cc-blob-resize-edge[data-edge="bottom"],
+#support-col.cc-blob-enabled .cc-blob-resize-edge[data-edge="bottom"] {
+    left: 42px;
+    right: 58px;
+    bottom: 0;
+    height: 24px;
+    cursor: ns-resize;
+}
+
+#chat-col.cc-blob-enabled .cc-blob-resize-edge[data-edge="corner"],
+#support-col.cc-blob-enabled .cc-blob-resize-edge[data-edge="corner"] {
+    right: 0;
+    bottom: 0;
+    width: 62px;
+    height: 62px;
+    cursor: nwse-resize;
+}
+
+#chat-col.cc-blob-edge-left,
+#support-col.cc-blob-edge-left,
+#chat-col.cc-blob-edge-right,
+#support-col.cc-blob-edge-right {
+    border-radius: 10% 42% 42% 10% / 24% 14% 14% 24% !important;
+    transform: scaleX(0.78) scaleY(1.055);
+    box-shadow:
+        0 20px 88px rgba(0, 0, 0, 0.48),
+        0 0 48px rgba(250, 204, 21, 0.24),
+        inset 0 0 0 1px rgba(255, 255, 255, 0.10),
+        inset 0 0 64px rgba(226, 232, 240, 0.09) !important;
+}
+
+#chat-col.cc-blob-edge-right,
+#support-col.cc-blob-edge-right {
+    border-radius: 42% 10% 10% 42% / 14% 24% 24% 14% !important;
+}
+
+#chat-col.cc-blob-edge-top,
+#support-col.cc-blob-edge-top,
+#chat-col.cc-blob-edge-bottom,
+#support-col.cc-blob-edge-bottom {
+    border-radius: 18% 18% 38% 38% / 12% 12% 42% 42% !important;
+    transform: scaleX(1.055) scaleY(0.82);
+}
+
+#chat-col.cc-blob-edge-bottom,
+#support-col.cc-blob-edge-bottom {
+    border-radius: 38% 38% 18% 18% / 42% 42% 12% 12% !important;
+}
+
+#chat-col.cc-blob-impact,
+#support-col.cc-blob-impact {
+    animation: cc-blob-impact 420ms ease-out 1, cc-blob-breathe 9s ease-in-out infinite;
+}
+
+#chat-col.cc-blob-collide,
+#support-col.cc-blob-collide {
+    --cc-blob-pressure: 0.82;
+    --cc-blob-resonance: 0.88;
+    border-color: rgba(226, 232, 240, 0.78) !important;
+    box-shadow:
+        0 22px 90px rgba(0, 0, 0, 0.50),
+        0 0 52px rgba(226, 232, 240, 0.22),
+        0 0 42px rgba(250, 204, 21, 0.24),
+        inset 0 0 0 1px rgba(255, 255, 255, 0.12),
+        inset 0 0 70px rgba(226, 232, 240, 0.11) !important;
+}
+
+#chat-col.cc-blob-probe-settled,
+#support-col.cc-blob-probe-settled {
+    --cc-blob-pressure: 0.02;
+    --cc-blob-resonance: 0.16;
+}
+
+#chat-col.cc-blob-probe-contact::after,
+#support-col.cc-blob-probe-contact::after {
+    box-shadow:
+        0 0 20px rgba(250, 204, 21, 0.24),
+        0 0 var(--cc-blob-contact-glow) rgba(226, 232, 240, 0.22);
+}
+
+#chat-col.cc-blob-enabled .cc-blob-resize-grip:hover,
+#support-col.cc-blob-enabled .cc-blob-resize-grip:hover {
+    border-color: rgba(250, 204, 21, 0.84);
+    box-shadow: 0 0 24px rgba(250, 204, 21, 0.34), inset 0 0 12px rgba(226, 232, 240, 0.14);
+}
+
+#chat-col.cc-blob-collapsed .cc-blob-resize-grip,
+#support-col.cc-blob-collapsed .cc-blob-resize-grip,
+#chat-col.cc-blob-collapsed .cc-blob-resize-edge,
+#support-col.cc-blob-collapsed .cc-blob-resize-edge {
+    display: none;
+}
+
+#chat-col.cc-blob-enabled .cc-blob-close,
+#support-col.cc-blob-enabled .cc-blob-close {
+    display: block;
+    position: absolute;
+    right: 1.08rem;
+    top: 0.83rem;
+    width: 24px;
+    height: 24px;
+    z-index: 7;
+    border: 1px solid rgba(226, 232, 240, 0.46);
+    border-radius: 999px;
+    background: rgba(15, 15, 17, 0.72);
+    color: #fff7ed;
+    cursor: pointer;
+    pointer-events: auto;
+    font-size: 16px;
+    line-height: 20px;
+    padding: 0;
+    box-shadow: 0 0 16px rgba(250, 204, 21, 0.20);
+}
+
+#chat-col.cc-blob-enabled .cc-blob-close:hover,
+#support-col.cc-blob-enabled .cc-blob-close:hover {
+    border-color: rgba(250, 204, 21, 0.86);
+    color: #facc15;
+}
+
+#chat-col.cc-blob-enabled::before,
+#support-col.cc-blob-enabled::before {
+    content: "";
+    position: absolute;
+    inset: 0.55rem;
+    pointer-events: none;
+    z-index: 1;
+    border-radius: inherit;
+    background:
+        linear-gradient(90deg, transparent 0 8%, rgba(250, 204, 21, 0.20) 8.5%, transparent 9.5% 46%, rgba(226, 232, 240, 0.18) 47%, transparent 48% 100%),
+        repeating-radial-gradient(circle at 16% 20%, rgba(250, 204, 21, 0.20) 0 1px, transparent 2px 19px),
+        repeating-linear-gradient(132deg, rgba(226, 232, 240, 0.14) 0 1px, transparent 1px 14px);
+    opacity: 0.72;
+    mix-blend-mode: screen;
+}
+
+#chat-col.cc-blob-enabled::after,
+#support-col.cc-blob-enabled::after {
+    content: attr(data-blob-title);
+    position: absolute;
+    inset: 0.62rem 0.82rem auto;
+    height: 2rem;
+    display: flex;
+    align-items: center;
+    padding: 0 0.72rem;
+    border-radius: 999px 42px 999px 42px;
+    border: 1px solid rgba(226, 232, 240, 0.34);
+    background:
+        linear-gradient(90deg, rgba(250, 204, 21, 0.19), rgba(226, 232, 240, 0.16), rgba(245, 158, 11, 0.11)),
+        rgba(15, 15, 17, 0.50);
+    color: #fff7ed;
+    font-size: 0.77rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    cursor: grab;
+    box-shadow: 0 0 18px rgba(250, 204, 21, 0.18);
+    z-index: 4;
+}
+
+#chat-col.cc-blob-dragging,
+#support-col.cc-blob-dragging {
+    user-select: none;
+}
+
+#chat-col.cc-blob-dragging::after,
+#support-col.cc-blob-dragging::after {
+    cursor: grabbing;
+}
+
+#chat-col.cc-blob-enabled #continuum-chat {
+    height: calc(100% - 148px) !important;
+    min-height: 92px !important;
+    max-height: none !important;
+    margin-bottom: 5.4rem !important;
+    overflow-y: auto !important;
+    background: rgba(13, 12, 11, 0.55) !important;
+    border-color: rgba(226, 232, 240, 0.24) !important;
+}
+
+#chat-col.cc-blob-enabled #intent-mode {
+    flex: 0 0 auto !important;
+    margin-top: 0.42rem !important;
+}
+
+#chat-col.cc-blob-enabled #blob-controls-row {
+    flex: 0 0 auto !important;
+}
+
+#chat-col.cc-blob-enabled #composer-row {
+    position: absolute !important;
+    left: 0.88rem;
+    right: 0.88rem;
+    bottom: 0.76rem;
+    z-index: 9;
+    flex: none !important;
+    padding: 0.48rem !important;
+    border: 1px solid rgba(226, 232, 240, 0.18);
+    border-radius: 10px;
+    background: rgba(12, 12, 14, 0.76);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    box-shadow: 0 -10px 28px rgba(0, 0, 0, 0.22), 0 0 18px rgba(250, 204, 21, 0.08);
+}
+
+#chat-col.cc-blob-enabled #continuum-input textarea {
+    min-height: 48px !important;
+    max-height: 112px !important;
+}
+
+#chat-col.cc-blob-enabled #clear-btn {
+    position: absolute !important;
+    left: 1.1rem;
+    bottom: 5.05rem;
+    z-index: 8;
+}
+
+#support-col.cc-blob-enabled #support-tabs {
+    height: calc(100% - 0.3rem) !important;
+    max-height: none !important;
+    overflow-y: auto !important;
+    background: rgba(13, 12, 11, 0.42) !important;
+    border-radius: 10px !important;
+}
+
+#chat-col.cc-blob-collapsed,
+#support-col.cc-blob-collapsed {
+    width: min(360px, calc(100vw - 28px)) !important;
+    height: 58px !important;
+    min-height: 58px !important;
+    resize: none !important;
+    overflow: hidden !important;
+    padding: 0 !important;
+    border-radius: 999px 48px 999px 48px !important;
+}
+
+#chat-col.cc-blob-collapsed > :not(.cc-blob-energy),
+#support-col.cc-blob-collapsed > :not(.cc-blob-energy) {
+    opacity: 0 !important;
+    pointer-events: none !important;
+}
+
+#chat-col.cc-blob-collapsed::after,
+#support-col.cc-blob-collapsed::after {
+    inset: 0.62rem 0.72rem;
+    height: auto;
+}
+
+body.cc-blob-meld #chat-col.cc-blob-enabled,
+body.cc-blob-meld #support-col.cc-blob-enabled {
+    mix-blend-mode: normal;
+}
+
+body.cc-blob-meld #support-col.cc-blob-enabled {
+    transform: translate(18px, 22px) rotate(0.3deg);
+    opacity: 0.88;
+    --cc-blob-z: 39;
+}
+
+body.cc-blob-meld #chat-col.cc-blob-enabled {
+    --cc-blob-z: 41;
+}
+
+@keyframes cc-blob-breathe {
+    0%, 100% {
+        border-radius: 33% 15% 25% 18% / 18% 28% 19% 31%;
+        filter: saturate(1.04);
+    }
+    48% {
+        border-radius: 18% 29% 17% 34% / 31% 18% 29% 17%;
+        filter: saturate(1.16);
+    }
+}
+
+@keyframes cc-blob-current {
+    0% { transform: rotate(0deg) scale(1); }
+    50% { transform: rotate(180deg) scale(1.06); }
+    100% { transform: rotate(360deg) scale(1); }
+}
+
+@keyframes cc-blob-bubble-rise {
+    0% {
+        transform: translate3d(0, 18%, 0) scale(0.56);
+        opacity: 0;
+    }
+    16% { opacity: 0.66; }
+    58% {
+        transform: translate3d(var(--drift), -62vh, 0) scale(1.08);
+        opacity: 0.45;
+    }
+    100% {
+        transform: translate3d(calc(var(--drift) * -0.45), -112vh, 0) scale(0.74);
+        opacity: 0;
+    }
+}
+
+@keyframes cc-blob-spark-flare {
+    0%, 100% {
+        opacity: 0;
+        transform: rotate(var(--rot)) scaleX(0.25);
+    }
+    45% {
+        opacity: 0.82;
+        transform: rotate(var(--rot)) scaleX(1);
+    }
+    62% {
+        opacity: 0.18;
+        transform: rotate(calc(var(--rot) + 5deg)) scaleX(0.68);
+    }
+}
+
+@keyframes cc-blob-impact {
+    0% { filter: saturate(1.1) brightness(1); }
+    40% { filter: saturate(1.35) brightness(1.16); }
+    100% { filter: saturate(1.05) brightness(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    #chat-col.cc-blob-enabled,
+    #support-col.cc-blob-enabled,
+    #chat-col.cc-blob-enabled .cc-blob-energy::before,
+    #support-col.cc-blob-enabled .cc-blob-energy::before,
+    #chat-col.cc-blob-enabled .cc-blob-bubble,
+    #support-col.cc-blob-enabled .cc-blob-bubble,
+    #chat-col.cc-blob-enabled .cc-blob-spark,
+    #support-col.cc-blob-enabled .cc-blob-spark {
+        animation: none !important;
+    }
+}
 
 #support-tabs {
     height: auto;
@@ -3138,9 +4153,9 @@ def _media_src(value: str) -> str:
         path = Path(__file__).parent / value
     try:
         rel = path.resolve().relative_to(Path(__file__).parent.resolve())
-        return "/file=" + str(rel).replace("\\", "/")
+        return "/gradio_api/file=" + quote(str(rel).replace("\\", "/"), safe="/")
     except Exception:
-        return "/file=" + str(path)
+        return "/gradio_api/file=" + quote(str(path).replace("\\", "/"), safe="/:")
 
 
 def _wallpaper_runtime_state() -> dict[str, Any]:
@@ -3170,18 +4185,18 @@ def _background_media_html() -> str:
     suffix = Path(selected.split("?", 1)[0]).suffix.lower()
     if suffix in {".webm", ".mp4", ".mov", ".m4v"}:
         return (
-            "<div id='continuum-wallpaper'>"
+            "<div id='continuum-wallpaper' data-wallpaper-kind='video'>"
             f"<video src='{html.escape(src)}' autoplay muted loop playsinline></video>"
             "</div>"
         )
     if suffix in {".html", ".htm"}:
         return (
-            "<div id='continuum-wallpaper'>"
+            "<div id='continuum-wallpaper' data-wallpaper-kind='web_wallpaper'>"
             f"<iframe src='{html.escape(src)}' title='Continuum wallpaper' aria-hidden='true'></iframe>"
             "</div>"
         )
     return (
-        "<div id='continuum-wallpaper'>"
+        "<div id='continuum-wallpaper' data-wallpaper-kind='image'>"
         f"<img src='{html.escape(src)}' alt='' aria-hidden='true'>"
         "</div>"
     )
@@ -3454,6 +4469,10 @@ CONTINUUM_SETTINGS_HEAD = """
 CONTINUUM_WALLPAPER_HEAD = """
 <script>
 (() => {
+  const BLOB_KEY = "continuum.wallpaperBlob.v1";
+  let wallpaperBlobState = null;
+  let wallpaperSaveTimer = null;
+
   function textOf(value) {
     if (value == null) return "";
     if (typeof value === "string") return value;
@@ -3489,6 +4508,213 @@ CONTINUUM_WALLPAPER_HEAD = """
     return shell ? shell.querySelector("iframe") : null;
   }
 
+  function wallpaperShell() {
+    return document.querySelector("#continuum-wallpaper");
+  }
+
+  function wallpaperDefaults() {
+    const vw = Math.max(360, window.innerWidth || 1280);
+    const vh = Math.max(420, window.innerHeight || 860);
+    return {
+      blob: false,
+      collapsed: false,
+      x: Math.max(18, vw - 470),
+      y: 92,
+      w: Math.min(440, vw - 36),
+      h: Math.min(310, vh - 118)
+    };
+  }
+
+  function loadWallpaperBlobState() {
+    const base = wallpaperDefaults();
+    try {
+      const saved = JSON.parse(localStorage.getItem(BLOB_KEY) || "{}");
+      return { ...base, ...saved };
+    } catch {
+      return base;
+    }
+  }
+
+  function saveWallpaperBlobState() {
+    clearTimeout(wallpaperSaveTimer);
+    wallpaperSaveTimer = setTimeout(() => {
+      try { localStorage.setItem(BLOB_KEY, JSON.stringify(wallpaperBlobState)); } catch {}
+    }, 90);
+  }
+
+  function clampWallpaperBlob() {
+    const panel = wallpaperBlobState || loadWallpaperBlobState();
+    const vw = Math.max(360, window.innerWidth || 1280);
+    const vh = Math.max(420, window.innerHeight || 860);
+    panel.w = Math.min(Math.max(Number(panel.w) || 440, 220), vw - 24);
+    panel.h = Math.min(Math.max(Number(panel.h) || 310, 58), vh - 24);
+    panel.x = Math.min(Math.max(Number(panel.x) || 18, 8), Math.max(8, vw - Math.min(panel.w, vw - 24) - 8));
+    panel.y = Math.min(Math.max(Number(panel.y) || 92, 8), Math.max(8, vh - Math.min(panel.h, vh - 24) - 8));
+  }
+
+  function ensureWallpaperChrome() {
+    const shell = wallpaperShell();
+    if (!shell || shell.dataset.wallpaperChromeBound === "1") return shell;
+    shell.dataset.wallpaperChromeBound = "1";
+
+    const handle = document.createElement("button");
+    handle.type = "button";
+    handle.className = "cc-wallpaper-blob-handle";
+    handle.setAttribute("aria-label", "Move Matrix Rain wallpaper blob");
+    shell.appendChild(handle);
+
+    const min = document.createElement("button");
+    min.type = "button";
+    min.className = "cc-wallpaper-blob-button cc-wallpaper-blob-min";
+    min.setAttribute("aria-label", "Collapse Matrix Rain wallpaper blob");
+    min.textContent = "–";
+    shell.appendChild(min);
+
+    const close = document.createElement("button");
+    close.type = "button";
+    close.className = "cc-wallpaper-blob-button cc-wallpaper-blob-close";
+    close.setAttribute("aria-label", "Return Matrix Rain wallpaper to full background");
+    close.textContent = "x";
+    shell.appendChild(close);
+
+    const grip = document.createElement("button");
+    grip.type = "button";
+    grip.className = "cc-wallpaper-blob-grip";
+    grip.setAttribute("aria-label", "Resize Matrix Rain wallpaper blob");
+    shell.appendChild(grip);
+
+    for (const edge of ["right", "bottom"]) {
+      const rail = document.createElement("button");
+      rail.type = "button";
+      rail.className = "cc-wallpaper-blob-edge";
+      rail.dataset.edge = edge;
+      rail.setAttribute("aria-label", `Resize Matrix Rain wallpaper blob ${edge}`);
+      shell.appendChild(rail);
+    }
+
+    let drag = null;
+    handle.addEventListener("pointerdown", (event) => {
+      if (!wallpaperBlobState) wallpaperBlobState = loadWallpaperBlobState();
+      if (!wallpaperBlobState.blob) return;
+      drag = {
+        id: event.pointerId,
+        startX: event.clientX,
+        startY: event.clientY,
+        x: wallpaperBlobState.x,
+        y: wallpaperBlobState.y
+      };
+      shell.classList.add("cc-wallpaper-dragging");
+      handle.setPointerCapture?.(event.pointerId);
+      event.preventDefault();
+      event.stopPropagation();
+    });
+    handle.addEventListener("pointermove", (event) => {
+      if (!drag || drag.id !== event.pointerId) return;
+      wallpaperBlobState.x = drag.x + event.clientX - drag.startX;
+      wallpaperBlobState.y = drag.y + event.clientY - drag.startY;
+      applyWallpaperBlobState();
+      event.preventDefault();
+    });
+    const endDrag = (event) => {
+      if (!drag || drag.id !== event.pointerId) return;
+      drag = null;
+      shell.classList.remove("cc-wallpaper-dragging");
+      applyWallpaperBlobState();
+    };
+    handle.addEventListener("pointerup", endDrag);
+    handle.addEventListener("pointercancel", endDrag);
+
+    let resize = null;
+    function bindResize(node, edge) {
+      node.addEventListener("pointerdown", (event) => {
+        if (!wallpaperBlobState) wallpaperBlobState = loadWallpaperBlobState();
+        if (!wallpaperBlobState.blob || wallpaperBlobState.collapsed) return;
+        resize = {
+          id: event.pointerId,
+          startX: event.clientX,
+          startY: event.clientY,
+          w: wallpaperBlobState.w,
+          h: wallpaperBlobState.h,
+          edge
+        };
+        node.setPointerCapture?.(event.pointerId);
+        event.preventDefault();
+        event.stopPropagation();
+      });
+      node.addEventListener("pointermove", (event) => {
+        if (!resize || resize.id !== event.pointerId) return;
+        if (resize.edge === "right" || resize.edge === "corner") {
+          wallpaperBlobState.w = resize.w + event.clientX - resize.startX;
+        }
+        if (resize.edge === "bottom" || resize.edge === "corner") {
+          wallpaperBlobState.h = resize.h + event.clientY - resize.startY;
+        }
+        applyWallpaperBlobState();
+        event.preventDefault();
+      });
+      const endResize = (event) => {
+        if (!resize || resize.id !== event.pointerId) return;
+        resize = null;
+        applyWallpaperBlobState();
+      };
+      node.addEventListener("pointerup", endResize);
+      node.addEventListener("pointercancel", endResize);
+    }
+    bindResize(grip, "corner");
+    shell.querySelectorAll(".cc-wallpaper-blob-edge").forEach((node) => bindResize(node, node.dataset.edge || "corner"));
+
+    min.addEventListener("click", (event) => {
+      if (!wallpaperBlobState) wallpaperBlobState = loadWallpaperBlobState();
+      wallpaperBlobState.blob = true;
+      wallpaperBlobState.collapsed = !wallpaperBlobState.collapsed;
+      applyWallpaperBlobState();
+      event.preventDefault();
+      event.stopPropagation();
+    });
+
+    close.addEventListener("click", (event) => {
+      if (!wallpaperBlobState) wallpaperBlobState = loadWallpaperBlobState();
+      wallpaperBlobState.blob = false;
+      wallpaperBlobState.collapsed = false;
+      applyWallpaperBlobState();
+      event.preventDefault();
+      event.stopPropagation();
+    });
+
+    handle.addEventListener("dblclick", (event) => {
+      if (!wallpaperBlobState) wallpaperBlobState = loadWallpaperBlobState();
+      wallpaperBlobState.collapsed = !wallpaperBlobState.collapsed;
+      applyWallpaperBlobState();
+      event.preventDefault();
+      event.stopPropagation();
+    });
+
+    return shell;
+  }
+
+  function applyWallpaperBlobState() {
+    const shell = ensureWallpaperChrome();
+    if (!shell) return;
+    if (!wallpaperBlobState) wallpaperBlobState = loadWallpaperBlobState();
+    clampWallpaperBlob();
+    shell.classList.toggle("cc-wallpaper-blob", Boolean(wallpaperBlobState.blob));
+    shell.classList.toggle("cc-wallpaper-collapsed", Boolean(wallpaperBlobState.blob && wallpaperBlobState.collapsed));
+    shell.style.setProperty("--cc-wallpaper-blob-x", `${Math.round(wallpaperBlobState.x)}px`);
+    shell.style.setProperty("--cc-wallpaper-blob-y", `${Math.round(wallpaperBlobState.y)}px`);
+    shell.style.setProperty("--cc-wallpaper-blob-w", `${Math.round(wallpaperBlobState.w)}px`);
+    shell.style.setProperty("--cc-wallpaper-blob-h", `${Math.round(wallpaperBlobState.h)}px`);
+    document.documentElement.classList.toggle("cc-wallpaper-active", true);
+    document.documentElement.dataset.continuumWallpaperMode = wallpaperBlobState.blob ? "blob-underlay" : "full-underlay";
+    saveWallpaperBlobState();
+  }
+
+  function setWallpaperBlobMode(blob, collapsed = false) {
+    if (!wallpaperBlobState) wallpaperBlobState = loadWallpaperBlobState();
+    wallpaperBlobState.blob = Boolean(blob);
+    wallpaperBlobState.collapsed = Boolean(collapsed);
+    applyWallpaperBlobState();
+  }
+
   window.continuumSpeechRain = function(text, source = "council") {
     const clean = textOf(text).replace(/\\s+/g, " ").trim();
     if (!clean) return false;
@@ -3504,9 +4730,858 @@ CONTINUUM_WALLPAPER_HEAD = """
     return true;
   };
 
+  window.continuumWallpaperCommand = function(payload = {}) {
+    const data = typeof payload === "string" ? { text: payload } : { ...(payload || {}) };
+    if (data.mode === "blob") setWallpaperBlobMode(true, false);
+    if (data.mode === "collapsed") setWallpaperBlobMode(true, true);
+    if (data.mode === "background") setWallpaperBlobMode(false, false);
+    if (data.text) return window.continuumSpeechRain(data.text, data.source || "wallpaper-command");
+    return true;
+  };
+
+  window.continuumToggleWallpaperBlob = function() {
+    if (!wallpaperBlobState) wallpaperBlobState = loadWallpaperBlobState();
+    wallpaperBlobState.blob = !wallpaperBlobState.blob;
+    if (wallpaperBlobState.blob) wallpaperBlobState.collapsed = false;
+    applyWallpaperBlobState();
+  };
+
+  window.continuumCollapseWallpaperBlob = function() {
+    if (!wallpaperBlobState) wallpaperBlobState = loadWallpaperBlobState();
+    wallpaperBlobState.blob = true;
+    wallpaperBlobState.collapsed = !wallpaperBlobState.collapsed;
+    applyWallpaperBlobState();
+  };
+
+  window.continuumWallpaperBlobState = function() {
+    if (!wallpaperBlobState) wallpaperBlobState = loadWallpaperBlobState();
+    return { ...wallpaperBlobState };
+  };
+
   window.continuumSpeechRainFromHistory = function(history) {
     return window.continuumSpeechRain(latestAssistantText(history), "chat-history");
   };
+
+  function bootWallpaper() {
+    if (!wallpaperBlobState) wallpaperBlobState = loadWallpaperBlobState();
+    if (wallpaperShell()) applyWallpaperBlobState();
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", bootWallpaper, { once: true });
+  } else {
+    bootWallpaper();
+  }
+  new MutationObserver(bootWallpaper).observe(document.documentElement, { childList: true, subtree: true });
+  window.addEventListener("resize", () => { if (wallpaperBlobState) applyWallpaperBlobState(); });
+})();
+</script>
+"""
+
+CONTINUUM_BLOB_OVERLAY_HEAD = """
+<script>
+(() => {
+  const KEY = "continuum.blobOverlay.v2";
+  const PROBE_KEY = "continuum.blobProbe.v1";
+  const PANEL_META = {
+    chat: { selector: "#chat-col", title: "Behold: Chat Blob" },
+    support: { selector: "#support-col", title: "Behold: Surface Blob" }
+  };
+  let state = null;
+  let saveTimer = null;
+  let probeSaveTimer = null;
+  let didProbeInit = false;
+  const historyStack = [];
+  const probeMotion = {};
+  const probeState = {
+    version: 1,
+    updatedAt: 0,
+    summary: {},
+    panels: {},
+    buffer: []
+  };
+
+  function defaults() {
+    const vw = Math.max(360, window.innerWidth || 1280);
+    const vh = Math.max(420, window.innerHeight || 860);
+    return {
+      meld: false,
+      zSeed: 50,
+      panels: {
+        chat: {
+          enabled: false,
+          collapsed: false,
+          x: 24,
+          y: 72,
+          w: Math.min(640, Math.round(vw * 0.58), vw - 96),
+          h: Math.min(560, Math.round(vh * 0.68), vh - 128),
+          edge: "",
+          z: 51
+        },
+        support: {
+          enabled: false,
+          collapsed: false,
+          x: Math.max(24, vw - Math.min(560, Math.round(vw * 0.48), vw - 96) - 36),
+          y: 96,
+          w: Math.min(560, Math.round(vw * 0.48), vw - 96),
+          h: Math.min(520, Math.round(vh * 0.62), vh - 142),
+          edge: "",
+          z: 50
+        }
+      }
+    };
+  }
+
+  function loadState() {
+    const base = defaults();
+    try {
+      const saved = JSON.parse(localStorage.getItem(KEY) || "{}");
+      return {
+        meld: Boolean(saved.meld),
+        zSeed: Number(saved.zSeed) || base.zSeed,
+        panels: {
+          chat: { ...base.panels.chat, ...(saved.panels?.chat || {}) },
+          support: { ...base.panels.support, ...(saved.panels?.support || {}) }
+        }
+      };
+    } catch {
+      return base;
+    }
+  }
+
+  function queueSave() {
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => {
+      try { localStorage.setItem(KEY, JSON.stringify(state)); } catch {}
+    }, 80);
+  }
+
+  function clamp01(value) {
+    return Math.max(0, Math.min(1, Number(value) || 0));
+  }
+
+  function round3(value) {
+    return Math.round((Number(value) || 0) * 1000) / 1000;
+  }
+
+  function cloneProbe() {
+    try { return JSON.parse(JSON.stringify(probeState)); } catch { return probeState; }
+  }
+
+  function queueProbeSave() {
+    clearTimeout(probeSaveTimer);
+    probeSaveTimer = setTimeout(() => {
+      try {
+        const payload = {
+          version: probeState.version,
+          updatedAt: probeState.updatedAt,
+          summary: probeState.summary,
+          panels: probeState.panels,
+          buffer: probeState.buffer.slice(-40)
+        };
+        localStorage.setItem(PROBE_KEY, JSON.stringify(payload));
+      } catch {}
+    }, 160);
+  }
+
+  function absenceField(panel) {
+    const vw = Math.max(360, window.innerWidth || 1280);
+    const vh = Math.max(420, window.innerHeight || 860);
+    return {
+      left: Math.max(0, Math.round(panel.x)),
+      right: Math.max(0, Math.round(vw - (panel.x + panel.w))),
+      top: Math.max(0, Math.round(panel.y)),
+      bottom: Math.max(0, Math.round(vh - (panel.y + panel.h)))
+    };
+  }
+
+  function updateProbeSummary() {
+    const panels = Object.values(probeState.panels || {});
+    const active = panels.filter((panel) => panel.enabled);
+    const dominant = active.reduce((best, panel) => {
+      if (!best) return panel;
+      return (panel.pressure + panel.resonance) > (best.pressure + best.resonance) ? panel : best;
+    }, null);
+    probeState.updatedAt = Date.now();
+    probeState.summary = {
+      active_panels: active.length,
+      dominant_panel: dominant?.name || "",
+      max_pressure: round3(Math.max(0, ...active.map((panel) => panel.pressure || 0))),
+      max_resonance: round3(Math.max(0, ...active.map((panel) => panel.resonance || 0))),
+      contact_panels: active.filter((panel) => panel.contact_edge).map((panel) => panel.name),
+      settled: active.length > 0 && active.every((panel) => panel.settled || panel.collapsed),
+      collision: active.some((panel) => panel.collision)
+    };
+    window.__continuumBlobProbe = probeState;
+    document.documentElement.dataset.continuumBlobProbe = active.length ? "active" : "idle";
+  }
+
+  function measurePanel(name, cause = "render", extra = {}) {
+    const panel = state?.panels?.[name];
+    if (!panel) return null;
+    const now = Date.now();
+    const rect = panelRect(panel);
+    const prev = probeMotion[name] || {
+      left: rect.left,
+      top: rect.top,
+      w: panel.w,
+      h: panel.h,
+      lastMotionAt: now
+    };
+    const movement = Math.hypot(
+      rect.left - prev.left,
+      rect.top - prev.top,
+      panel.w - prev.w,
+      panel.h - prev.h
+    );
+    const speed = clamp01(movement / 110);
+    const wall = wallContactMetrics(panel);
+    const collisionPressure = panel.collision ? 0.86 : 0;
+    const manualPressure = clamp01(extra.pressure);
+    const pressure = clamp01(Math.max(speed * 0.92, wall.pressure, collisionPressure, manualPressure));
+    const moving = Boolean(extra.moving) || speed > 0.018 || pressure > 0.16;
+    const lastMotionAt = moving ? now : (prev.lastMotionAt || now);
+    const enabled = Boolean(panel.enabled);
+    const collapsed = Boolean(panel.collapsed);
+    const resonance = enabled
+      ? clamp01(Math.max(0.12, pressure * 0.76 + speed * 0.35 + (collapsed ? 0.02 : 0.09)))
+      : 0;
+    const settled = Boolean(enabled && !collapsed && now - lastMotionAt > 900 && pressure < 0.08);
+    const info = {
+      name,
+      title: PANEL_META[name]?.title || name,
+      cause,
+      ts: now,
+      enabled,
+      collapsed,
+      x: Math.round(panel.x),
+      y: Math.round(panel.y),
+      w: Math.round(panel.w),
+      h: Math.round(panel.h),
+      z: Math.round(Number(panel.z) || 0),
+      pressure: round3(pressure),
+      resonance: round3(resonance),
+      speed: round3(speed),
+      settled,
+      collision: Boolean(panel.collision),
+      contact_edge: wall.edge,
+      contact_depth: round3(wall.depth),
+      absence: absenceField(panel)
+    };
+    probeMotion[name] = {
+      left: rect.left,
+      top: rect.top,
+      w: panel.w,
+      h: panel.h,
+      lastMotionAt
+    };
+    probeState.panels[name] = info;
+    updateProbeSummary();
+    return info;
+  }
+
+  function noteProbe(name, cause, extra = {}) {
+    if (!state) state = loadState();
+    const names = name && state.panels[name] ? [name] : Object.keys(PANEL_META);
+    for (const panelName of names) measurePanel(panelName, cause, extra);
+    probeState.buffer.push({
+      ts: Date.now(),
+      panel: name || "all",
+      cause,
+      summary: { ...probeState.summary }
+    });
+    while (probeState.buffer.length > 80) probeState.buffer.shift();
+    queueProbeSave();
+  }
+
+  function clampPanel(panel) {
+    const vw = Math.max(360, window.innerWidth || 1280);
+    const vh = Math.max(420, window.innerHeight || 860);
+    panel.w = Math.min(Math.max(Number(panel.w) || 520, 240), vw - 42);
+    panel.h = Math.min(Math.max(Number(panel.h) || 420, 58), vh - 42);
+    panel.x = Math.min(Math.max(Number(panel.x) || 18, 8), Math.max(8, vw - Math.min(panel.w, vw - 42) - 8));
+    panel.y = Math.min(Math.max(Number(panel.y) || 72, 8), Math.max(8, vh - Math.min(panel.h, vh - 42) - 8));
+  }
+
+  function panelElement(name) {
+    return document.querySelector(PANEL_META[name].selector);
+  }
+
+  function ensureBlobChrome(el) {
+    if (!el.querySelector(":scope > .cc-blob-energy")) {
+      const energy = document.createElement("div");
+      energy.className = "cc-blob-energy";
+      for (let i = 0; i < 12; i += 1) {
+        const bubble = document.createElement("i");
+        bubble.className = "cc-blob-bubble";
+        bubble.style.setProperty("--x", `${8 + ((i * 17) % 84)}%`);
+        bubble.style.setProperty("--s", `${16 + ((i * 11) % 38)}px`);
+        bubble.style.setProperty("--dur", `${7 + (i % 5) * 1.4}s`);
+        bubble.style.setProperty("--delay", `${-1 * (i * 0.73).toFixed(2)}s`);
+        bubble.style.setProperty("--drift", `${(i % 2 ? 1 : -1) * (18 + (i % 4) * 12)}px`);
+        energy.appendChild(bubble);
+      }
+      for (let i = 0; i < 5; i += 1) {
+        const spark = document.createElement("i");
+        spark.className = "cc-blob-spark";
+        spark.style.setProperty("--x", `${10 + ((i * 23) % 72)}%`);
+        spark.style.setProperty("--y", `${18 + ((i * 19) % 62)}%`);
+        spark.style.setProperty("--w", `${90 + i * 28}px`);
+        spark.style.setProperty("--rot", `${-26 + i * 13}deg`);
+        spark.style.setProperty("--dur", `${4.6 + i * 0.9}s`);
+        spark.style.setProperty("--delay", `${-1 * (i * 1.1).toFixed(2)}s`);
+        energy.appendChild(spark);
+      }
+      el.prepend(energy);
+    }
+    if (!el.querySelector(":scope > .cc-blob-resize-grip")) {
+      const grip = document.createElement("button");
+      grip.type = "button";
+      grip.className = "cc-blob-resize-grip";
+      grip.setAttribute("aria-label", "Resize blob");
+      el.appendChild(grip);
+    }
+    for (const edge of ["right", "bottom", "corner"]) {
+      if (!el.querySelector(`:scope > .cc-blob-resize-edge[data-edge="${edge}"]`)) {
+        const rail = document.createElement("button");
+        rail.type = "button";
+        rail.className = "cc-blob-resize-edge";
+        rail.dataset.edge = edge;
+        rail.setAttribute("aria-label", `Resize blob ${edge}`);
+        el.appendChild(rail);
+      }
+    }
+    if (!el.querySelector(":scope > .cc-blob-close")) {
+      const close = document.createElement("button");
+      close.type = "button";
+      close.className = "cc-blob-close";
+      close.setAttribute("aria-label", "Close blob overlay");
+      close.textContent = "x";
+      el.appendChild(close);
+    }
+  }
+
+  function edgeClass(edge) {
+    return {
+      left: "cc-blob-edge-left",
+      right: "cc-blob-edge-right",
+      top: "cc-blob-edge-top",
+      bottom: "cc-blob-edge-bottom"
+    }[edge] || "";
+  }
+
+  function applyPanel(name) {
+    const el = panelElement(name);
+    if (!el || !state?.panels?.[name]) return;
+    const panel = state.panels[name];
+    clampPanel(panel);
+    ensureBlobChrome(el);
+    const probeInfo = measurePanel(name, "apply");
+    el.dataset.blobTitle = PANEL_META[name].title;
+    el.classList.toggle("cc-blob-enabled", Boolean(panel.enabled));
+    el.classList.toggle("cc-blob-collapsed", Boolean(panel.enabled && panel.collapsed));
+    el.classList.toggle("cc-blob-collide", Boolean(panel.enabled && panel.collision));
+    el.classList.toggle("cc-blob-probe-settled", Boolean(panel.enabled && probeInfo?.settled));
+    el.classList.toggle("cc-blob-probe-contact", Boolean(panel.enabled && probeInfo?.contact_edge));
+    el.classList.remove("cc-blob-edge-left", "cc-blob-edge-right", "cc-blob-edge-top", "cc-blob-edge-bottom");
+    const edge = panel.enabled ? edgeClass(panel.edge) : "";
+    if (edge) el.classList.add(edge);
+    if (panel.enabled) {
+      el.style.setProperty("--cc-blob-x", `${panel.x}px`);
+      el.style.setProperty("--cc-blob-y", `${panel.y}px`);
+      el.style.setProperty("--cc-blob-w", `${panel.w}px`);
+      el.style.setProperty("--cc-blob-h", `${panel.h}px`);
+      el.style.setProperty("--cc-blob-z", `${Number(panel.z) || 40}`);
+      const pressure = probeInfo?.pressure ?? 0;
+      const resonance = probeInfo?.resonance ?? 0.12;
+      el.style.setProperty("--cc-blob-pressure", `${pressure}`);
+      el.style.setProperty("--cc-blob-resonance", `${resonance}`);
+      el.style.setProperty("--cc-blob-settle", probeInfo?.settled ? "1" : "0");
+      el.style.setProperty("--cc-blob-pressure-glow", `${Math.round(pressure * 36)}px`);
+      el.style.setProperty("--cc-blob-resonance-glow", `${Math.round(resonance * 34)}px`);
+      el.style.setProperty("--cc-blob-contact-glow", `${16 + Math.round(pressure * 34)}px`);
+      el.style.setProperty("--cc-blob-saturate", `${round3(1.02 + resonance * 0.22)}`);
+      el.style.setProperty("--cc-blob-brightness", `${round3(1 + pressure * 0.08)}`);
+      el.style.setProperty("--cc-blob-energy-opacity", `${round3(0.74 + resonance * 0.22)}`);
+      el.style.setProperty("--cc-blob-energy-blur", `${round3(Math.max(3.8, 7 - pressure * 2))}px`);
+      el.style.setProperty("--cc-blob-energy-saturate", `${round3(1.22 + resonance * 0.46)}`);
+      el.style.setProperty("--cc-blob-current-duration", `${round3(Math.max(7.5, 13 - resonance * 4))}s`);
+    }
+  }
+
+  function apply() {
+    if (!state) state = loadState();
+    document.body.classList.toggle("cc-blob-meld", Boolean(state.meld));
+    applyPanel("chat");
+    applyPanel("support");
+    queueSave();
+    queueProbeSave();
+  }
+
+  function snapshot() {
+    try { return JSON.parse(JSON.stringify(state || loadState())); } catch { return null; }
+  }
+
+  function remember() {
+    const snap = snapshot();
+    if (!snap) return;
+    historyStack.push(snap);
+    while (historyStack.length > 24) historyStack.shift();
+  }
+
+  function undoBlob() {
+    const prior = historyStack.pop();
+    if (!prior) return;
+    state = prior;
+    apply();
+  }
+
+  function anyEnabled() {
+    return Object.keys(PANEL_META).some((name) => Boolean(state?.panels?.[name]?.enabled));
+  }
+
+  function anyExpanded() {
+    return Object.keys(PANEL_META).some((name) => {
+      const panel = state?.panels?.[name];
+      return Boolean(panel?.enabled && !panel?.collapsed);
+    });
+  }
+
+  function reduceBlobState() {
+    if (!state) state = loadState();
+    if (!anyEnabled()) return;
+    remember();
+    if (anyExpanded()) {
+      for (const name of Object.keys(PANEL_META)) {
+        const panel = state.panels[name];
+        if (panel.enabled) panel.collapsed = true;
+      }
+    } else {
+      for (const name of Object.keys(PANEL_META)) {
+        state.panels[name].enabled = false;
+        state.panels[name].collapsed = false;
+        state.panels[name].edge = "";
+      }
+      state.meld = false;
+    }
+    apply();
+  }
+
+  function raisePanel(name) {
+    if (!state) state = loadState();
+    const panel = state.panels[name];
+    if (!panel) return;
+    state.zSeed = (Number(state.zSeed) || 50) + 1;
+    panel.z = state.zSeed;
+    applyPanel(name);
+    queueSave();
+  }
+
+  function markImpact(el) {
+    el.classList.remove("cc-blob-impact");
+    void el.offsetWidth;
+    el.classList.add("cc-blob-impact");
+  }
+
+  function wallContactMetrics(panel) {
+    const vw = Math.max(360, window.innerWidth || 1280);
+    const vh = Math.max(420, window.innerHeight || 860);
+    const margin = 14;
+    const contacts = [
+      ["left", Math.max(0, margin - panel.x)],
+      ["right", Math.max(0, panel.x + panel.w - (vw - margin))],
+      ["top", Math.max(0, margin - panel.y)],
+      ["bottom", Math.max(0, panel.y + panel.h - (vh - margin))]
+    ].filter(([, depth]) => depth > 0);
+    if (!contacts.length) return { edge: "", depth: 0, pressure: 0 };
+    contacts.sort((a, b) => b[1] - a[1]);
+    return {
+      edge: contacts[0][0],
+      depth: contacts[0][1],
+      pressure: clamp01(contacts[0][1] / 72)
+    };
+  }
+
+  function wallContact(panel) {
+    return wallContactMetrics(panel).edge;
+  }
+
+  function panelRect(panel) {
+    return {
+      left: panel.x,
+      top: panel.y,
+      right: panel.x + panel.w,
+      bottom: panel.y + panel.h,
+      cx: panel.x + panel.w / 2,
+      cy: panel.y + panel.h / 2
+    };
+  }
+
+  function overlapDepth(a, b) {
+    const x = Math.min(a.right, b.right) - Math.max(a.left, b.left);
+    const y = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top);
+    if (x <= 0 || y <= 0) return null;
+    return { x, y };
+  }
+
+  function clearCollisionSoon(...names) {
+    window.setTimeout(() => {
+      if (!state) return;
+      for (const name of names) {
+        if (state.panels[name]) {
+          state.panels[name].collision = false;
+          applyPanel(name);
+        }
+      }
+    }, 360);
+  }
+
+  function resolveBlobCollisions(activeName) {
+    if (!state?.panels?.[activeName]) return;
+    const active = state.panels[activeName];
+    if (!active.enabled || active.collapsed) return;
+    const activeEl = panelElement(activeName);
+    const activeRect = panelRect(active);
+    for (const otherName of Object.keys(PANEL_META)) {
+      if (otherName === activeName) continue;
+      const other = state.panels[otherName];
+      if (!other?.enabled || other.collapsed) continue;
+      const depth = overlapDepth(activeRect, panelRect(other));
+      if (!depth) continue;
+      const otherEl = panelElement(otherName);
+      active.collision = true;
+      other.collision = true;
+      if (depth.x < depth.y) {
+        const direction = activeRect.cx <= panelRect(other).cx ? 1 : -1;
+        const push = Math.min(96, Math.max(18, depth.x * 0.62));
+        other.x += direction * push;
+        active.x -= direction * Math.min(24, push * 0.22);
+      } else {
+        const direction = activeRect.cy <= panelRect(other).cy ? 1 : -1;
+        const push = Math.min(84, Math.max(16, depth.y * 0.58));
+        other.y += direction * push;
+        active.y -= direction * Math.min(22, push * 0.22);
+      }
+      active.edge = wallContact(active);
+      other.edge = wallContact(other);
+      clampPanel(active);
+      clampPanel(other);
+      markImpact(activeEl);
+      markImpact(otherEl);
+      applyPanel(otherName);
+      noteProbe(activeName, "collision", { moving: true, pressure: 0.86 });
+      noteProbe(otherName, "collision", { moving: true, pressure: 0.86 });
+      clearCollisionSoon(activeName, otherName);
+    }
+  }
+
+  function togglePanel(name) {
+    if (!state) state = loadState();
+    remember();
+    const panel = state.panels[name];
+    panel.enabled = !panel.enabled;
+    if (panel.enabled) panel.collapsed = false;
+    raisePanel(name);
+    apply();
+    noteProbe(name, panel.enabled ? "enable" : "disable");
+  }
+
+  function collapseEnabled() {
+    if (!state) state = loadState();
+    remember();
+    let touched = false;
+    for (const name of Object.keys(PANEL_META)) {
+      const panel = state.panels[name];
+      if (panel.enabled) {
+        panel.collapsed = !panel.collapsed;
+        touched = true;
+      }
+    }
+    if (!touched) {
+      state.panels.chat.enabled = true;
+      state.panels.chat.collapsed = true;
+    }
+    apply();
+    noteProbe("", "collapse");
+  }
+
+  function resetPanels() {
+    remember();
+    state = defaults();
+    try { localStorage.removeItem(KEY); } catch {}
+    apply();
+    noteProbe("", "reset");
+  }
+
+  function toggleMeld() {
+    if (!state) state = loadState();
+    remember();
+    state.meld = !state.meld;
+    state.panels.chat.enabled = true;
+    state.panels.support.enabled = true;
+    raisePanel("support");
+    raisePanel("chat");
+    apply();
+    noteProbe("", "meld");
+  }
+
+  function bindPanel(name) {
+    const el = panelElement(name);
+    if (!el) return;
+    ensureBlobChrome(el);
+
+    if (el.dataset.blobChromeBound !== "1") {
+      el.dataset.blobChromeBound = "1";
+      let resize = null;
+      function bindResizeHandle(handle, edge) {
+        if (!handle || handle.dataset.blobResizeBound === "1") return;
+        handle.dataset.blobResizeBound = "1";
+        handle.addEventListener("pointerdown", (event) => {
+          if (!state) state = loadState();
+          const panel = state.panels[name];
+          if (!panel.enabled || panel.collapsed) return;
+          remember();
+          raisePanel(name);
+          resize = {
+            id: event.pointerId,
+            startX: event.clientX,
+            startY: event.clientY,
+            w: panel.w,
+            h: panel.h,
+            edge
+          };
+          handle.setPointerCapture?.(event.pointerId);
+          event.preventDefault();
+          event.stopPropagation();
+        });
+        handle.addEventListener("pointermove", (event) => {
+          if (!resize || resize.id !== event.pointerId) return;
+          const panel = state.panels[name];
+          if (resize.edge === "right" || resize.edge === "corner") {
+            panel.w = resize.w + event.clientX - resize.startX;
+          }
+          if (resize.edge === "bottom" || resize.edge === "corner") {
+            panel.h = resize.h + event.clientY - resize.startY;
+          }
+          const priorEdge = panel.edge || "";
+          panel.edge = wallContact(panel);
+          if (panel.edge && panel.edge !== priorEdge) markImpact(el);
+          applyPanel(name);
+          noteProbe(name, "resize", { moving: true, pressure: 0.42 });
+          queueSave();
+        });
+        const endResize = (event) => {
+          if (!resize || resize.id !== event.pointerId) return;
+          resize = null;
+          const panel = state.panels[name];
+          if (panel) panel.edge = wallContact(panel);
+          resolveBlobCollisions(name);
+          applyPanel(name);
+          noteProbe(name, "resize-end");
+          queueSave();
+        };
+        handle.addEventListener("pointerup", endResize);
+        handle.addEventListener("pointercancel", endResize);
+      }
+
+      bindResizeHandle(el.querySelector(":scope > .cc-blob-resize-grip"), "corner");
+      el.querySelectorAll(":scope > .cc-blob-resize-edge").forEach((handle) => {
+        bindResizeHandle(handle, handle.dataset.edge || "corner");
+      });
+
+      const close = el.querySelector(":scope > .cc-blob-close");
+      if (close && close.dataset.blobCloseBound !== "1") {
+        close.dataset.blobCloseBound = "1";
+        close.addEventListener("click", (event) => {
+          if (!state) state = loadState();
+          remember();
+          const panel = state.panels[name];
+          panel.enabled = false;
+          panel.collapsed = false;
+          panel.edge = "";
+          apply();
+          noteProbe(name, "close");
+          event.preventDefault();
+          event.stopPropagation();
+        });
+      }
+    }
+
+    if (el.dataset.blobBound === "1") return;
+    el.dataset.blobBound = "1";
+
+    let drag = null;
+    el.addEventListener("pointerdown", () => {
+      if (!state) state = loadState();
+      if (state.panels[name]?.enabled) raisePanel(name);
+    }, true);
+
+    el.addEventListener("pointerdown", (event) => {
+      if (!state) state = loadState();
+      const panel = state.panels[name];
+      if (!panel.enabled) return;
+      if (event.target.closest?.(".cc-blob-resize-grip,.cc-blob-resize-edge,.cc-blob-close")) return;
+      const rect = el.getBoundingClientRect();
+      const headerHit = event.clientY - rect.top <= 48;
+      if (!headerHit) return;
+      remember();
+      drag = {
+        id: event.pointerId,
+        startX: event.clientX,
+        startY: event.clientY,
+        panelX: panel.x,
+        panelY: panel.y,
+        edge: panel.edge || ""
+      };
+      el.classList.add("cc-blob-dragging");
+      el.setPointerCapture?.(event.pointerId);
+      event.preventDefault();
+    });
+
+    el.addEventListener("pointermove", (event) => {
+      if (!drag || drag.id !== event.pointerId) return;
+      const panel = state.panels[name];
+      panel.x = drag.panelX + event.clientX - drag.startX;
+      panel.y = drag.panelY + event.clientY - drag.startY;
+      const priorEdge = panel.edge || "";
+      panel.edge = wallContact(panel);
+      if (panel.edge && panel.edge !== priorEdge) markImpact(el);
+      resolveBlobCollisions(name);
+      applyPanel(name);
+      noteProbe(name, "drag", { moving: true, pressure: 0.38 });
+      queueSave();
+    });
+
+    function endDrag(event) {
+      if (!drag || drag.id !== event.pointerId) return;
+      drag = null;
+      el.classList.remove("cc-blob-dragging");
+      const panel = state.panels[name];
+      if (panel) panel.edge = wallContact(panel);
+      resolveBlobCollisions(name);
+      applyPanel(name);
+      noteProbe(name, "drag-end");
+      queueSave();
+    }
+    el.addEventListener("pointerup", endDrag);
+    el.addEventListener("pointercancel", endDrag);
+
+    el.addEventListener("click", (event) => {
+      if (!state) state = loadState();
+      const panel = state.panels[name];
+      if (panel?.enabled) raisePanel(name);
+      if (!panel.enabled || !panel.collapsed) return;
+      const rect = el.getBoundingClientRect();
+      if (event.clientY - rect.top > 58) return;
+      remember();
+      panel.collapsed = false;
+      apply();
+      noteProbe(name, "expand");
+    });
+
+    el.addEventListener("dblclick", (event) => {
+      if (!state) state = loadState();
+      const panel = state.panels[name];
+      if (!panel.enabled) return;
+      const rect = el.getBoundingClientRect();
+      if (event.clientY - rect.top > 58) return;
+      remember();
+      panel.collapsed = !panel.collapsed;
+      apply();
+      noteProbe(name, panel.collapsed ? "collapse-one" : "expand-one");
+    });
+  }
+
+  function bindResizeObserver() {
+    if (!("ResizeObserver" in window) || window.__continuumBlobResizeObserver) return;
+    const observer = new ResizeObserver((entries) => {
+      if (!state) return;
+      for (const entry of entries) {
+        const el = entry.target;
+        const name = Object.keys(PANEL_META).find((key) => panelElement(key) === el);
+        if (!name) continue;
+        const panel = state.panels[name];
+        if (!panel.enabled || panel.collapsed || el.classList.contains("cc-blob-dragging")) continue;
+        const rect = el.getBoundingClientRect();
+        panel.w = Math.round(rect.width);
+        panel.h = Math.round(rect.height);
+        queueSave();
+      }
+    });
+    window.__continuumBlobResizeObserver = observer;
+  }
+
+  function observePanel(name) {
+    const observer = window.__continuumBlobResizeObserver;
+    const el = panelElement(name);
+    if (observer && el && el.dataset.blobObserved !== "1") {
+      el.dataset.blobObserved = "1";
+      observer.observe(el);
+    }
+  }
+
+  function init() {
+    if (!state) state = loadState();
+    bindResizeObserver();
+    bindPanel("chat");
+    bindPanel("support");
+    observePanel("chat");
+    observePanel("support");
+    apply();
+    if (!didProbeInit) {
+      didProbeInit = true;
+      noteProbe("", "init");
+    }
+  }
+
+  function isTypingTarget(target) {
+    const tag = String(target?.tagName || "").toLowerCase();
+    return tag === "input" || tag === "textarea" || tag === "select" || Boolean(target?.isContentEditable);
+  }
+
+  window.continuumToggleBlobChat = () => togglePanel("chat");
+  window.continuumToggleBlobSurface = () => togglePanel("support");
+  window.continuumToggleBlobMeld = toggleMeld;
+  window.continuumCollapseBlobPanels = collapseEnabled;
+  window.continuumResetBlobPanels = resetPanels;
+  window.continuumReduceBlobState = reduceBlobState;
+  window.continuumUndoBlob = undoBlob;
+  window.continuumBlobProbeState = cloneProbe;
+  window.continuumBlobProbeNote = noteProbe;
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", init, { once: true });
+  } else {
+    init();
+  }
+  if (!window.__continuumBlobKeysBound) {
+    window.__continuumBlobKeysBound = true;
+    document.addEventListener("keydown", (event) => {
+      if (!state) state = loadState();
+      if (event.key === "Escape" && anyEnabled()) {
+        reduceBlobState();
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
+      if ((event.ctrlKey || event.metaKey) && String(event.key).toLowerCase() === "z" && anyEnabled() && !isTypingTarget(event.target)) {
+        undoBlob();
+        event.preventDefault();
+        event.stopPropagation();
+      }
+    }, true);
+  }
+  new MutationObserver(init).observe(document.documentElement, { childList: true, subtree: true });
+  window.addEventListener("resize", () => { if (state) apply(); });
+  if (!window.__continuumBlobProbeTicker) {
+    window.__continuumBlobProbeTicker = window.setInterval(() => {
+      if (!state || !anyEnabled()) return;
+      for (const name of Object.keys(PANEL_META)) {
+        if (state.panels[name]?.enabled) applyPanel(name);
+      }
+      queueProbeSave();
+    }, 900);
+  }
 })();
 </script>
 """
@@ -3593,6 +5668,20 @@ with gr.Blocks(title=TITLE) as demo:
         # Left: Chat
         with gr.Column(scale=3, elem_id="chat-col"):
             chatbot = gr.Chatbot(height=650, label=CHATBOT_LABEL, elem_id="continuum-chat")
+            intent_mode = gr.Radio(
+                choices=INTENT_MODE_CHOICES,
+                value="Auto",
+                label="Intent Mode",
+                elem_id="intent-mode",
+                interactive=True,
+            )
+            with gr.Row(elem_id="blob-controls-row"):
+                blob_chat_btn = gr.Button("Blob Chat", size="sm", variant="secondary")
+                blob_surface_btn = gr.Button("Blob Surface", size="sm", variant="secondary")
+                blob_wallpaper_btn = gr.Button("Wallpaper Blob", size="sm", variant="secondary")
+                blob_meld_btn = gr.Button("Meld", size="sm", variant="secondary")
+                blob_collapse_btn = gr.Button("Collapse", size="sm", variant="secondary")
+                blob_reset_btn = gr.Button("Reset Blobs", size="sm", variant="secondary")
             with gr.Row(elem_id="composer-row"):
                 box = gr.Textbox(placeholder=INPUT_PLACEHOLDER, scale=8, show_label=False, elem_id="continuum-input")
                 send = gr.Button(SEND_LABEL, variant="primary", scale=1, elem_id="send-btn")
@@ -3624,6 +5713,28 @@ with gr.Blocks(title=TITLE) as demo:
                     with gr.Row(elem_id="relay-row"):
                         relay_box = gr.Textbox(label="Relay Command (click row to load)", scale=4, interactive=True)
                         paste_btn = gr.Button("Paste to chat ▸", scale=1)
+                with gr.TabItem("Native Tools"):
+                    native_initial_status, native_initial_rows = native_toolkit_surface()
+                    native_refresh = gr.Button("Refresh Native Tools", size="sm")
+                    native_status = gr.Markdown(native_initial_status)
+                    native_table = gr.Dataframe(
+                        headers=["Category", "Tool", "Args", "Description", "Relay Command"],
+                        datatype=["str", "str", "str", "str", "str"],
+                        column_count=(5, "fixed"),
+                        wrap=True,
+                        interactive=False,
+                        value=native_initial_rows,
+                        elem_id="native-tool-table",
+                    )
+                    with gr.Row(elem_id="native-relay-row"):
+                        native_relay_box = gr.Textbox(label="Native relay command", scale=4, interactive=True)
+                        native_paste_btn = gr.Button("Paste to chat ▸", scale=1)
+                with gr.TabItem("Last Track"):
+                    track_initial_summary, _track_initial_audio, track_initial_receipt = latest_music_track()
+                    track_refresh = gr.Button("Refresh Last Track", size="sm")
+                    track_summary = gr.Markdown(value=track_initial_summary)
+                    track_audio = gr.Audio(value=None, label="Latest Music Forge audio", type="filepath")
+                    track_receipt = gr.JSON(value=track_initial_receipt, label="Track receipt")
                 with gr.TabItem("Memory"):
                     mem_refresh = gr.Button("Load / refresh memory", size="sm")
                     mem_status = gr.Markdown(
@@ -3640,14 +5751,14 @@ with gr.Blocks(title=TITLE) as demo:
                     mem_detail = gr.JSON(label="Node informational wealth")
 
     # Wiring
-    send_flow = send.click(chat, [box, chatbot, model_dd, mcp_url, session], [chatbot, session, box, timeline_plot, sankey_plot, stage])
+    send_flow = send.click(chat, [box, chatbot, model_dd, intent_mode, mcp_url, session], [chatbot, session, box, timeline_plot, sankey_plot, stage])
     send_flow.then(load_trace_table, [session], [mem_table, mem_status]).then(
         None,
         chatbot,
         None,
         js="(history) => { window.continuumSpeechRainFromHistory?.(history); }",
     )
-    submit_flow = box.submit(chat, [box, chatbot, model_dd, mcp_url, session], [chatbot, session, box, timeline_plot, sankey_plot, stage])
+    submit_flow = box.submit(chat, [box, chatbot, model_dd, intent_mode, mcp_url, session], [chatbot, session, box, timeline_plot, sankey_plot, stage])
     submit_flow.then(load_trace_table, [session], [mem_table, mem_status]).then(
         None,
         chatbot,
@@ -3669,12 +5780,22 @@ with gr.Blocks(title=TITLE) as demo:
     tool_search.change(browse_tools, [tool_search, session], [tool_status, tool_table])
     tool_table.select(on_select_tool, [tool_table], [relay_box])
     paste_btn.click(_paste_to_chat, [relay_box, box], [box])
+    native_refresh.click(native_toolkit_surface, None, [native_status, native_table])
+    native_table.select(on_select_tool, [native_table], [native_relay_box])
+    native_paste_btn.click(_paste_to_chat, [native_relay_box, box], [box])
     peer_save.click(
         save_peer_links,
         [peer_link_1, peer_link_2, peer_link_3, peer_link_4, peer_link_5, session],
         [peer_link_status, session, app_settings_summary, tool_status, tool_table],
     )
     app_settings_refresh.click(runtime_settings_markdown, None, app_settings_summary)
+    blob_chat_btn.click(None, None, None, js="() => { window.continuumToggleBlobChat?.(); }")
+    blob_surface_btn.click(None, None, None, js="() => { window.continuumToggleBlobSurface?.(); }")
+    blob_wallpaper_btn.click(None, None, None, js="() => { window.continuumToggleWallpaperBlob?.(); }")
+    blob_meld_btn.click(None, None, None, js="() => { window.continuumToggleBlobMeld?.(); }")
+    blob_collapse_btn.click(None, None, None, js="() => { window.continuumCollapseBlobPanels?.(); }")
+    blob_reset_btn.click(None, None, None, js="() => { window.continuumResetBlobPanels?.(); }")
+    track_refresh.click(latest_music_track, None, [track_summary, track_audio, track_receipt])
     mem_refresh.click(load_trace_table, [session], [mem_table, mem_status])
     mem_table.select(inspect_node, [session], [mem_detail])
     graph_size.change(set_graph_height, [graph_size, session], [timeline_plot, sankey_plot])
@@ -3688,6 +5809,6 @@ if __name__ == "__main__":
     demo.launch(
         theme=THEME,
         css=CUSTOM_CSS + (_CLI_SCROLL_CSS if CLI_BRAIN else ""),
-        head=CONTINUUM_SETTINGS_HEAD + CONTINUUM_WALLPAPER_HEAD,
+        head=CONTINUUM_SETTINGS_HEAD + CONTINUUM_WALLPAPER_HEAD + CONTINUUM_BLOB_OVERLAY_HEAD,
         allowed_paths=_launch_allowed_paths(),
     )

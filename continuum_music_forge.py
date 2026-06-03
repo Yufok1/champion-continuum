@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+from hashlib import sha256
 import json
 import os
 import re
@@ -76,6 +77,20 @@ def _json_preview(value: Any) -> str:
     if len(text) > MAX_PREVIEW_CHARS:
         return text[:MAX_PREVIEW_CHARS] + "\n...[truncated]"
     return text
+
+
+def _hash_saved_files(saved_files: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    enriched: list[dict[str, Any]] = []
+    for item in saved_files:
+        row = dict(item)
+        path = row.get("path")
+        if path and "sha256" not in row:
+            try:
+                row["sha256"] = sha256(Path(str(path)).read_bytes()).hexdigest()
+            except OSError:
+                row["sha256"] = ""
+        enriched.append(row)
+    return enriched
 
 
 def _parse_payload_json(payload_json: str) -> dict[str, Any]:
@@ -410,9 +425,21 @@ def generate_hf_space_song(
     else:
         result = client.predict(prompt, api_name=api_name)
 
-    saved_files = _collect_audio_outputs(result, run_dir, name_hint=_slug(run_title, "song"))
+    saved_files = _hash_saved_files(_collect_audio_outputs(result, run_dir, name_hint=_slug(run_title, "song")))
+    receipt_payload = {
+        "space_id": space_id,
+        "api_name": api_name,
+        "title": run_title,
+        "prompt_sha256": sha256((prompt or "").encode("utf-8")).hexdigest(),
+        "artifact_sha256": [item.get("sha256") for item in saved_files if item.get("sha256")],
+    }
     manifest = {
         "schema": "champion-continuum/music-generation/v1",
+        "receipt_id": "music_receipt_" + sha256(
+            json.dumps(receipt_payload, ensure_ascii=True, sort_keys=True, default=str).encode("utf-8")
+        ).hexdigest()[:20],
+        "action_class": "generate",
+        "approval_state": "operator_or_council_requested",
         "created_ms": int(time.time() * 1000),
         "space_id": space_id,
         "api_name": api_name,

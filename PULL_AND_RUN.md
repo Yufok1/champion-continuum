@@ -86,6 +86,18 @@ Connect Services**. The deck writes them into the active MCP config, indexes
 their tools, and lets the tool-less chat agent call them through text relay:
 `[[tools: ...]]` and `[[tool: ...]]`.
 
+Use **Intent Mode** beside the chat composer when you want to be explicit:
+`Auto`, `Plain Conversation`, `Translation Bridge`, `Music Forge`, `Resource
+Audit`, or `Expressive Wallpaper`. The selector tells the council the intended
+faculty for the next turn while keeping the main chat as the only human input.
+Tool-backed modes become operational only after the matching MCP tools are
+indexed.
+
+Use **Native Tools** in the support rail for Continuum's own toolkits. It is
+separate from the generic **Tool Surface**: Tool Surface reflects whatever
+MCP/SSE services are indexed, while Native Tools keeps the built-in Continuum
+facilities summonable with ready relay commands.
+
 The local service URL to try first is:
 
 ```text
@@ -156,6 +168,10 @@ Wallpaper/background media is optional. Drop an export at
 HTML wallpapers receive council speech as `continuum:speech-rain`, making
 assistant replies drive rolling glyphs, color, pattern, direction, and
 intensity in the background.
+
+The wallpaper is embedded in the main page. Use **Wallpaper Blob** on the deck
+to turn it into a draggable, resizable, collapsible Matrix Rain underlay
+viewport when the full background is too distracting.
 
 The five service boxes are the primary MCP setup. The one-off MCP field is only
 for a temporary single service.
