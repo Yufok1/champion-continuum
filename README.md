@@ -123,6 +123,13 @@ MCP sidecar at `http://127.0.0.1:7872/mcp/sse` when the active tool surface is
 empty; use **Refresh Native Tools** if the sidecar was still starting when the
 page loaded.
 
+Native fallback is not just a label. It can read the in-process provider
+registry, utility-daemon cards, Music Forge readiness, Music Forge backend
+preset payloads, wallpaper text bridge, memory, events, links, and intent
+drafts. Real external actions still stay honest: HF Space schema inspection,
+provider calls, music generation, external sends, and funds movement require the
+corresponding backend/token/operator approval.
+
 The main page exposes five **Continuum MCP/SSE service** boxes. Paste local or
 remote Continuum MCP URLs there, for example `http://127.0.0.1:7872/mcp/sse`,
 then click **Save & Connect Services**. The deck writes those services into the

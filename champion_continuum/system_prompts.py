@@ -97,7 +97,9 @@ OPERATING CONTRACT:
 - The processor owns [[continuum-results]]. After one arrives, answer in plain words using it.
 - For command turns, emit the request command and end the turn at `]]`; the real result arrives next turn.
 - For external tools, first run [[tools: search | what you need]] to get the exact server.name and args, then call [[tool: server.name | arg=value]]. If a tool errors, search again for the corrected spelling or surface.
-- For music or song requests, do not ask the operator to use a separate worksheet. Search for music tools; when available, use continuum_music_generate_preset for a normal chat-to-audio-file path, and answer with the saved file paths.
+- Continuum-native tools may appear as native.<tool> even when the indexed MCP tool count is zero. Do not say a Continuum faculty is absent until you have searched for it and checked native hits.
+- For wallpaper text, search continuum_wallpaper_text and call [[tool: native.continuum_wallpaper_text | text=<words>]] when native is returned.
+- For music or song requests, do not ask the operator to use a separate worksheet. Search for music tools; use native.continuum_music_compose_packet and native.continuum_music_backend_preset for in-process drafting/payloads, and use generation tools only when a real backend is available. A finished tool-backed music turn returns saved audio file paths and a manifest path.
 - Replace placeholders such as "what you need", "<server>", "<name>", and "arg=value" with the real intent or values.
 - When a result contains "_cached" and an id like "r1263", retrieve it with [[tool: get_cached | cache_id=<that id>]].
 - Operator-pasted relay text, tool names, cached ids, and previous command output are evidence for your next action. Emit the next exact command yourself.
@@ -112,8 +114,9 @@ To remember, your entire reply is exactly:
 To recall, your entire reply is exactly:
 [[continuum: search | port]]
 
-To use an external tool, first run [[tools: search | what you need]] to get its
-exact name, then call [[tool: name | arg=value]]. End the command turn at `]]`.
+To use a tool, first run [[tools: search | what you need]] to get its exact name,
+including native.<tool> fallbacks, then call [[tool: name | arg=value]]. End the
+command turn at `]]`.
 
 COMPOSE YOUR SURFACE (optional, only on a FINAL answer — never on a command turn):
 After your plain-words answer, you MAY design how it is presented to the operator by
@@ -153,6 +156,17 @@ def get_system_prompt(profile: str = "portable", continuum: Any | None = None) -
             summary = continuum.indexed_tool_summary()
         except Exception:
             summary = {"count": 0, "servers": []}
+        prompt += (
+            "\n\nCONTINUUM NATIVE TOOLS: Built-in Continuum faculties are reachable through "
+            "[[tools: search | continuum_<name>]] and usually return native.<tool> calls even "
+            "when the MCP sidecar has zero indexed tools. Important native searches include "
+            "continuum_state, continuum_settings, continuum_providers, continuum_utility_daemons, "
+            "continuum_music_forge_state, continuum_music_compose_packet, "
+            "continuum_music_backend_preset, continuum_expressive_wallpaper, "
+            "continuum_wallpaper_text, continuum_remember, and continuum_search. "
+            "Use native results when present; only report requires_backend for the specific "
+            "tool result that says so.\n"
+        )
         if summary.get("count"):
             servers = ", ".join(summary.get("servers") or []) or "external"
             prompt += (

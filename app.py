@@ -1036,18 +1036,18 @@ def _intent_mode_context(intent_mode: str, state: dict | None = None) -> str:
     elif mode == "Music Forge":
         lines.extend([
             "- Treat the message as a request to plan or produce original music/audio through Music Forge.",
-            "- First use indexed Music Forge tools when available: continuum_music_forge_state, continuum_music_compose_packet, continuum_music_hf_space_schema, and continuum_music_generate_preset.",
-            "- A finished tool-backed music turn returns saved audio file paths and a manifest path. If no music tools are indexed, say exactly that and give the smallest recovery step.",
+            "- First search Music Forge tools. If native.* tools are returned, use native.continuum_music_forge_state, native.continuum_music_compose_packet, and native.continuum_music_backend_preset for in-process state/payload work.",
+            "- Use schema/generation tools only when the specific tool result says the real backend is available. A finished tool-backed music turn returns saved audio file paths and a manifest path.",
         ])
     elif mode == "Resource Audit":
         lines.extend([
             "- Enumerate the live resource/tool surface from evidence. Do not invent facilities.",
-            "- If no tools are indexed, report zero tools and the active/saved service URL state instead of suggesting fake endpoints.",
+            "- If no MCP tools are indexed, still audit the Continuum-native fallback surface through native.* tools before reporting a dead end.",
         ])
     elif mode == "Expressive Wallpaper":
         lines.extend([
             "- Treat the answer as a visual/expressive surface request.",
-            "- Use the expressive wallpaper tool when indexed; otherwise explain whether the frontend wallpaper bridge is active and what is missing.",
+            "- Search continuum_wallpaper_text. If native.continuum_wallpaper_text is returned, call it with the requested words. The native wallpaper bridge does not require an indexed MCP sidecar.",
         ])
     lines.append(f"- Indexed MCP tool count visible to this session: {tool_count}.")
     return "\n".join(lines)
@@ -2803,7 +2803,8 @@ def _sanitize_relay_templates(text: str) -> str:
 _TOOL_CALL_RE = re.compile(r"\[\[\s*tool\s*:\s*([^|\]\s]+)", re.IGNORECASE)
 _OPERATOR_ACTION_RE = re.compile(
     r"\b(start|spawn|create|write|edit|delete|remove|restore|import|export|register|download|"
-    r"upload|plug|unplug|mutate|persist|bind|activate|run|launch|send|toggle|publish|deploy|push)\b",
+    r"upload|plug|unplug|mutate|persist|bind|activate|run|launch|send|toggle|publish|deploy|push|"
+    r"adjust|update|change|set|queue|display|show|paint|rain)\b",
     re.IGNORECASE,
 )
 
@@ -5807,7 +5808,7 @@ with gr.Blocks(title=TITLE) as demo:
                             scale=4,
                         )
                         wallpaper_send = gr.Button("Send Wallpaper Text", scale=1, variant="secondary")
-                    wallpaper_status = gr.Markdown("Use this for direct operator text. Agents can use `continuum_wallpaper_text` when the local MCP surface is indexed.")
+                    wallpaper_status = gr.Markdown("Use this for direct operator text. Tool-less agents can use `[[tool: native.continuum_wallpaper_text | text=...]]`; indexed MCP tools are optional.")
                     native_table = gr.Dataframe(
                         headers=["Category", "Tool", "Args", "Description", "Relay Command"],
                         datatype=["str", "str", "str", "str", "str"],

@@ -25,6 +25,7 @@ The processor answers with one block:
 from __future__ import annotations
 
 import json
+import importlib
 import os
 import re
 import time
@@ -272,6 +273,72 @@ def _native_payload_json(value: Any) -> dict[str, Any]:
     return parsed if isinstance(parsed, dict) else {"value": parsed}
 
 
+def _optional_facility_callable(module_name: str, function_name: str) -> tuple[Any | None, str]:
+    errors: list[str] = []
+    candidates = [
+        module_name,
+        f"champion_continuum.deck.{module_name}",
+    ]
+    for candidate in candidates:
+        try:
+            module = importlib.import_module(candidate)
+        except Exception as exc:
+            errors.append(f"{candidate}: {type(exc).__name__}: {exc}")
+            continue
+        func = getattr(module, function_name, None)
+        if callable(func):
+            return func, ""
+        errors.append(f"{candidate}: missing {function_name}")
+    return None, "; ".join(errors)
+
+
+def _native_channel_path(root: str | Path) -> Path:
+    return _event_log_path(root).parent
+
+
+def _native_daemon_registry(root: str | Path) -> dict[str, Any]:
+    loader, error = _optional_facility_callable("continuum_daemon_registry", "load_daemon_registry")
+    if loader is None:
+        return {
+            "status": "unavailable",
+            "reason": "continuum_daemon_registry is not importable in this process.",
+            "detail": error,
+            "channel": str(_native_channel_path(root)),
+            "counts": {"total": 0, "active": 0, "safe_for_autonomous_assignment": 0},
+            "daemons": [],
+        }
+    return loader(_native_channel_path(root))
+
+
+def _native_match_daemons(root: str | Path, capability: str = "", output: str = "", include_stale: bool = False) -> dict[str, Any]:
+    capability = str(capability or "").strip().lower()
+    output = str(output or "").strip().lower()
+    registry = _native_daemon_registry(root)
+    matches = []
+    for daemon in registry.get("daemons") or []:
+        caps = {str(item).lower() for item in daemon.get("capabilities") or []}
+        outs = {str(item).lower() for item in daemon.get("outputs") or []}
+        if not include_stale and daemon.get("stale"):
+            continue
+        if capability and capability not in caps:
+            continue
+        if output and output not in outs:
+            continue
+        matches.append(daemon)
+    return {
+        "status": "ok" if registry.get("status") == "ok" else registry.get("status", "unavailable"),
+        "capability": capability,
+        "output": output,
+        "count": len(matches),
+        "matches": matches,
+        "registry": {
+            "channel": registry.get("channel"),
+            "counts": registry.get("counts"),
+            "reason": registry.get("reason"),
+        },
+    }
+
+
 def _unsupported_native(tool_name: str, reason: str) -> dict[str, Any]:
     return {
         "kind": "tool",
@@ -332,10 +399,33 @@ def _execute_native_tool(continuum: Continuum, tool_name: str, arguments: dict[s
                 "requires_backend": ["music_generation", "hf_space_schema", "provider_calls", "external_sends"],
             },
         }
-    if tool_name in {"continuum_providers", "continuum_utility_daemons", "continuum_match_daemons"}:
-        return _unsupported_native(tool_name, "This faculty needs the app registry or indexed MCP sidecar for live data.")
+    if tool_name == "continuum_providers":
+        provider_state, error = _optional_facility_callable("continuum_provider_registry", "provider_registry_state")
+        if provider_state is None:
+            return _unsupported_native(tool_name, f"Provider registry is not importable in this process: {error}")
+        result = provider_state()
+        if isinstance(result, dict):
+            result = {"status": "ok", **result}
+        return {"kind": "tool", "verb": f"native.{tool_name}", "ok": True, "result": result}
+    if tool_name == "continuum_utility_daemons":
+        return {"kind": "tool", "verb": f"native.{tool_name}", "ok": True, "result": _native_daemon_registry(root)}
+    if tool_name == "continuum_match_daemons":
+        include_stale = str(arguments.get("include_stale") or "").strip().lower() in {"1", "true", "yes", "on"}
+        result = _native_match_daemons(
+            root,
+            capability=str(arguments.get("capability") or ""),
+            output=str(arguments.get("output") or ""),
+            include_stale=include_stale,
+        )
+        return {"kind": "tool", "verb": f"native.{tool_name}", "ok": True, "result": result}
     if tool_name == "continuum_music_forge_state":
-        return _unsupported_native(tool_name, "Music Forge state is owned by the app/MCP backend; in-process relay can only draft packets.")
+        music_state, error = _optional_facility_callable("continuum_music_forge", "music_forge_state")
+        if music_state is None:
+            return _unsupported_native(tool_name, f"Music Forge module is not importable in this process: {error}")
+        result = music_state()
+        if isinstance(result, dict):
+            result = {"status": "ok", **result, "native_note": "State and packet/preset drafting are available in-process; schema inspection and generation still call external HF Spaces."}
+        return {"kind": "tool", "verb": f"native.{tool_name}", "ok": True, "result": result}
     if tool_name == "continuum_music_compose_packet":
         idea = str(arguments.get("idea") or "").strip()
         style = str(arguments.get("style") or "").strip()
@@ -353,7 +443,22 @@ def _execute_native_tool(continuum: Continuum, tool_name: str, arguments: dict[s
             "needs_generation_backend": True,
         }
         return {"kind": "tool", "verb": f"native.{tool_name}", "ok": True, "result": packet}
-    if tool_name in {"continuum_music_backend_preset", "continuum_music_hf_space_schema", "continuum_music_generate_preset", "continuum_music_generate_hf_space"}:
+    if tool_name == "continuum_music_backend_preset":
+        preset_builder, error = _optional_facility_callable("continuum_music_forge", "music_backend_preset_payload")
+        if preset_builder is None:
+            return _unsupported_native(tool_name, f"Music backend preset builder is not importable in this process: {error}")
+        try:
+            result = preset_builder(
+                backend=str(arguments.get("backend") or "ace_jam"),
+                prompt=str(arguments.get("prompt") or ""),
+                lyrics=str(arguments.get("lyrics") or ""),
+                duration=float(arguments.get("duration") or 30),
+                seed=int(arguments.get("seed") or -1),
+            )
+        except Exception as exc:
+            return {"kind": "tool", "verb": f"native.{tool_name}", "ok": False, "error": f"{type(exc).__name__}: {exc}"}
+        return {"kind": "tool", "verb": f"native.{tool_name}", "ok": True, "result": {"status": "ok", **result}}
+    if tool_name in {"continuum_music_hf_space_schema", "continuum_music_generate_preset", "continuum_music_generate_hf_space"}:
         return _unsupported_native(tool_name, "Real music backend calls require the app/MCP Music Forge backend.")
     if tool_name == "continuum_translate_packet":
         raw = str(arguments.get("raw_message") or "").strip()

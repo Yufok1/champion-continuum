@@ -103,6 +103,12 @@ also tries to self-index the local MCP sidecar at `http://127.0.0.1:7872/mcp/sse
 when the active tool surface is empty. If the sidecar was still starting when
 the page loaded, click **Refresh Native Tools**.
 
+Native fallback can read the in-process provider registry, daemon registry,
+Music Forge readiness, backend preset payloads, wallpaper text bridge, memory,
+events, links, and intent drafts. It does not fake external work: provider
+calls, HF Space schema inspection, real music generation, sends, and wallet
+actions still require the matching backend/token/operator approval.
+
 The local service URL to try first is:
 
 ```text
